@@ -114,8 +114,6 @@ If the default mode does not meet your requirements, choose one of the following
 
 ## Participant Roles
 
-Full naming conventions are in [[LiveKit 房间参与者命名规范]].
-
 | Role | Identity Format | Description |
 | --- | --- | --- |
 | **user** | `user` | End user. Publishes microphone/camera; receives the avatar's video. Multiple users can share the same Room. |
@@ -524,7 +522,7 @@ sequenceDiagram
 | Role | Identity | Token Issuer | Network Requirement |
 | --- | --- | --- | --- |
 | End User | `user` | Developer backend | Internal network is sufficient |
-| agent | `agent_{sessionId}` | Developer backend | Internal network is sufficient |
+| agent | `agent` | Developer backend | Internal network is sufficient |
 | renderer | `newport-renderer` | Auto-issued by plugin (or developer backend when calling the API directly) | Developer LiveKit must be publicly reachable |
 | coordinator | `newport-coordinator` | Auto-issued by plugin (or developer backend when calling the API directly) | Developer LiveKit must be publicly reachable |
 
@@ -540,7 +538,7 @@ sequenceDiagram
 
 Frontend integration code examples are in Chapter I, Quick Start Step 5.
 
-The JS SDK provides richer capabilities (subtitle callbacks, emotion control, interrupt listeners, connection state management, and more). For the complete API reference see: xx
+The JS SDK provides richer capabilities (subtitle callbacks, emotion control, interrupt listeners, connection state management, and more). For the complete API reference see: [https://github.com/newportAI-lab/liveavatar-js-sdk](https://github.com/newportAI-lab/liveavatar-js-sdk)
 
 ---
 
