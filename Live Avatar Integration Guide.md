@@ -339,7 +339,7 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | `input.text` | User sent text via Data Channel; platform forwards it |
 | `input.asr.partial` | Streaming intermediate ASR result (sent by platform when platform provides ASR) |
 | `input.asr.final` | Final ASR recognition result (sent by platform when platform provides ASR) |
-| `input.voice.start` | VAD detected user started speaking |
+| `input.voice.start` | VAD detected user started speaking; in Developer ASR / Omni mode, the platform auto-clears the RTC playback buffer on receipt |
 | `input.voice.finish` | VAD detected user stopped speaking |
 | `input.audio.start` | Raw audio stream start (platform forwards raw user audio to developer when developer provides ASR) |
 | `input.audio.finish` | Raw audio stream end (same condition as above) |
@@ -357,7 +357,7 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | `response.done` | End-of-text signal; used when platform provides TTS |
 | `response.audio.start` | Audio stream start. **Sent by whoever provides TTS** (developer when developer provides TTS; platform when platform provides TTS) |
 | `response.audio.finish` | Audio stream end. **Sent by whoever provides TTS** (same rule) |
-| `control.interrupt` | Interrupt the avatar's current playback |
+| `control.interrupt` | Explicit programmatic interrupt (for scenarios not triggered by user input, e.g. backend timeout or business-logic override; the platform auto-clears the buffer on `input.text` and `input.voice.start`, so no explicit interrupt is needed in those flows) |
 | `system.prompt` | Idle wake text (triggers the avatar to speak proactively) |
 | `error` | Error reporting |
 
@@ -523,8 +523,8 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | End User | `user` | Developer backend | Internal network is sufficient |
 | agent | `agent` | Developer backend | Internal network is sufficient |
-| renderer | `newport-renderer` | Auto-issued by plugin (or developer backend when calling the API directly) | Developer LiveKit must be publicly reachable |
-| coordinator | `newport-coordinator` | Auto-issued by plugin (or developer backend when calling the API directly) | Developer LiveKit must be publicly reachable |
+| renderer | `facemarket-renderer` | Auto-issued by plugin (or developer backend when calling the API directly) | Developer LiveKit must be publicly reachable |
+| coordinator | `facemarket-coordinator` | Auto-issued by plugin (or developer backend when calling the API directly) | Developer LiveKit must be publicly reachable |
 
 > **Security note**: `rendererToken` should be set to least-privilege (Sub Audio/Data + Pub Video/Audio only); `coordinatorToken` should be set to `canPublish: false, canPublishData: true`. Both should have a validity of no more than 1 hour and are passed once via `/session/start` — **the platform does not retain them**.
 >
