@@ -45,7 +45,7 @@ const client = createClient({
     type: 'direct',
     config: {
       sfuUrl: '',
-      clientToken: '',
+      userToken: '',
     },
   },
 });
