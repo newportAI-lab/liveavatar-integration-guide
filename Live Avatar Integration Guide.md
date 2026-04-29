@@ -21,7 +21,7 @@ After publishing you will receive an `avatarId` (the unique identifier for the a
 ## Step 3: Install the Frontend SDK
 
 ```bash
-npm install @sanseng/livekit-ws-sdk
+npm install @sanseng/liveavatar-js-sdk
 ```
 
 ## Step 4: Exchange a sessionToken on the Backend
@@ -54,7 +54,7 @@ Deliver the `token` (i.e. `sessionToken`) to the frontend.
 The frontend SDK uses the `sessionToken` to automatically initiate the session and join the room:
 
 ```ts
-import { createClient } from '@sanseng/livekit-ws-sdk';
+import { createClient } from '@sanseng/liveavatar-js-sdk';
 
 const client = createClient({
   connectConfig: {
@@ -248,7 +248,7 @@ Standard Implementation Flow:
 Now you can start the avatar in your frontend:
 
 ```ts
-import { createClient } from '@sanseng/livekit-ws-sdk';
+import { createClient } from '@sanseng/liveavatar-js-sdk';
 
 const client = createClient({
   connectConfig: {

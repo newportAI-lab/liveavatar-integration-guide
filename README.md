@@ -34,11 +34,11 @@ Developer documentation for integrating [Facemarket Live Avatar](https://facemar
 ## Quick Start
 
 ```bash
-npm install @sanseng/livekit-ws-sdk
+npm install @sanseng/liveavatar-js-sdk
 ```
 
 ```javascript
-import { createClient, type PerformanceMetricRecord } from '@sanseng/livekit-ws-sdk';
+import { createClient, type PerformanceMetricRecord } from '@sanseng/liveavatar-js-sdk';
 
 const client = createClient({
   connectConfig: {
