@@ -29,8 +29,9 @@ npm install @sanseng/livekit-ws-sdk
 Use your API Key to call `/auth/session/token` and obtain a short-lived session credential to pass to the frontend:
 
 ```bash
-GET https://facemarket.ai/vih/dispatcher/auth/session/token
-Authorization: Bearer <API_KEY>
+curl -X POST "https://facemarket.ai/vih/dispatcher/auth/session/token" \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json"
 ```
 
 Response:
@@ -195,30 +196,33 @@ We understand that hosting an API Key with a third-party platform is a significa
 
 Integration with WebSocket or WebRTC mode, the session must be initiated via a server-to-server call. This step allocates resources, prepares the renderer, and generates the necessary tokens for participants.
 
-The Start Interface: POST /session/start
-Endpoint: <https://facemarket.ai/vih/dispatcher/session/start>
+Start a live avatar session.
 
-Authentication: Authorization: Bearer <API_KEY>
+**Request**
 
-Request Body:
-
-```json
-{
-  "avatarId": "string"
-}
+```bash
+curl -X POST "https://facemarket.ai/vih/dispatcher/session/start" \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "avatarId": "string"
+  }'
 ```
 
-Or for BYO RTC
+**Request (BYO RTC)**
 
-```json
-{
-  "avatarId": "string",
-  "roomName": "string",
-  "agentIdentity": "string",
-  "sfuUrl": "string",
-  "coordinatorToken": "string",
-  "rendererToken": "string",
-}
+```bash
+curl -X POST "https://facemarket.ai/vih/dispatcher/session/start" \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "avatarId": "string",
+    "roomName": "string",
+    "agentIdentity": "string",
+    "sfuUrl": "string",
+    "coordinatorToken": "string",
+    "rendererToken": "string"
+  }'
 ```
 
 Success Response (200 OK):
