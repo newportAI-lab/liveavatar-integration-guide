@@ -417,8 +417,6 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | `input.asr.final` | Final ASR recognition result (sent by platform when platform provides ASR) |
 | `input.voice.start` | VAD detected user started speaking; in Developer ASR / Omni mode, the platform auto-clears the RTC playback buffer on receipt |
 | `input.voice.finish` | VAD detected user stopped speaking |
-| `input.audio.start` | Raw audio stream start (platform forwards raw user audio to developer when developer provides ASR) |
-| `input.audio.finish` | Raw audio stream end (same condition as above) |
 | `session.state` | State sync (IDLE / LISTENING / THINKING / SPEAKING, etc.) |
 | `system.idleTrigger` | User has been inactive for an extended period |
 | `session.closing` | Connection is about to close (e.g. timeout) |
