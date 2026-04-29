@@ -71,6 +71,81 @@ client.sendTextQuestion('Hello, please introduce yourself');   // Or send text
 
 ---
 
+## Step 6: Call `/session/start` (Backend)
+
+> In default and API Key Hosting modes, the frontend SDK handles this call internally.
+
+Use your API Key to call the session start endpoint:
+
+```bash
+POST https://facemarket.ai/vih/dispatcher/v1/session/start
+Authorization: Bearer <API_KEY>
+Content-Type: application/json
+
+{
+  "avatarId": "your_avatar_id"
+}
+```
+
+**Request Parameters:**
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `avatarId` | String | Yes | Digital human avatar ID |
+| `userId` | String | No | User ID |
+| `voiceId` | String | No | Voice parameter ID |
+| `roomName` | String | No | LiveKit Room name (required in Plugin mode) |
+| `livekitUrl` | String | No | LiveKit WebSocket URL (required in Plugin mode) |
+| `agentIdentity` | String | No | Developer agent participant identity (Plugin mode) |
+| `rendererToken` | String | No | Renderer JWT signed by Plugin using developer's LK credentials (Plugin mode) |
+| `coordinatorToken` | String | No | Coordinator JWT signed by Plugin (Plugin mode) |
+
+**Success Response (Http 200):**
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "sessionId": "sess_abc123",
+    "sfuUrl": "wss://sfu.example.com/room/xxx",
+    "userToken": "eyJhbGc...",
+    "agentWsUrl": "ws://localhost:8080/agent/ws",
+    "coordinatorToken": "eyJhbGc..."
+  }
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `code` | int | `0` for success |
+| `message` | String | `"success"` |
+| `data.sessionId` | String | Session ID for this session |
+| `data.sfuUrl` | String | SFU URL for JS to join the room |
+| `data.userToken` | String | Token for JS to join the room |
+| `data.agentWsUrl` | String | WebSocket URL for developer to connect (WS Inbound mode) |
+| `data.coordinatorToken` | String | Coordinator JWT signed by Plugin (Plugin mode) |
+
+**Failure Response:**
+
+```json
+{
+  "code": 50000,
+  "message": "Avatar not found",
+  "data": null
+}
+```
+
+> **Processing Flow:**
+> 1. Backend calls `POST /session/start` with `avatarId`
+> 2. Platform validates the avatar and starts a stream session
+> 3. Platform returns `sessionId`, `sfuUrl`, `userToken`, and optionally `agentWsUrl`
+> 4. Backend delivers `userToken` + `sfuUrl` to the frontend; stores `sessionId` for downstream use
+
+---
+
 > **Need to integrate your own LLM / Agent / business system?** Continue reading the advanced modes below.
 
 ---
