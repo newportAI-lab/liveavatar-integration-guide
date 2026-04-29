@@ -429,8 +429,8 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | --- | --- |
 | `session.ready` | Handshake response — **must** be sent after receiving `session.init` |
 | `response.start` | Optional. Configure TTS parameters for this reply (speed / volume / mood). Only effective when **platform provides TTS** |
-| `response.chunk` | Streaming text reply fragment; used when platform provides TTS |
-| `response.done` | End-of-text signal; used when platform provides TTS |
+| `response.chunk` | Streaming text reply fragment |
+| `response.done` | End-of-text signal|
 | `response.audio.start` | Audio stream start. **Sent by whoever provides TTS** (developer when developer provides TTS; platform when platform provides TTS) |
 | `response.audio.finish` | Audio stream end. **Sent by whoever provides TTS** (same rule) |
 | `control.interrupt` | Explicit programmatic interrupt (for scenarios not triggered by user input, e.g. backend timeout or business-logic override; the platform auto-clears the buffer on `input.text` and `input.voice.start`, so no explicit interrupt is needed in those flows) |
