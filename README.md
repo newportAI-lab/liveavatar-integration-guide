@@ -38,16 +38,17 @@ npm install @sanseng/livekit-ws-sdk
 ```
 
 ```javascript
-import { createClient } from '@sanseng/livekit-ws-sdk';
+import { createClient, type PerformanceMetricRecord } from '@sanseng/livekit-ws-sdk';
 
 const client = createClient({
-  avatarId: 'your_avatar_id',
-  video: { containerElement: document.getElementById('avatar') },
+  connectConfig: {
+    type: 'direct',
+    config: {
+      sfuUrl: '',
+      clientToken: '',
+    },
+  },
 });
-
-client.setAuthToken(sessionToken); // obtained from your backend
-await client.connect();
-client.startAudioCapture();
 ```
 
 See [Chapter I](./Live%20Avatar%20Integration%20Guide.md#i-quick-start-up-and-running-in-5-minutes) for the full 5-step walkthrough.
