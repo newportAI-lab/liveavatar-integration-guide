@@ -108,6 +108,7 @@ If the default mode does not meet your requirements, choose one of the following
 | **userToken** | The credential for an end user to join the RTC room. Issued by the platform (or by the developer in BYO RTC mode), embedding room name and user identity. |
 | **agentToken** | The credential for the developer's agent to join the RTC room (WebRTC modes only). |
 | **rendererToken** | The credential for the renderer to join the developer's LiveKit room (BYO RTC mode only; issued by the developer and passed to the platform). |
+| **coordinatorToken** | The credential for the coordinator to join the developer's LiveKit room (BYO RTC mode only; issued by the developer and passed to the platform). |
 | **agentWsUrl** | In WS Inbound mode, the dynamically allocated WebSocket endpoint for this session. It embeds a one-time token bound to the current `sessionId`. For **backend use only** — do not forward to the frontend. |
 
 ## Sessions & Rooms
@@ -449,8 +450,8 @@ Audio data is transmitted as **WebSocket binary frames** — no base64 encoding.
 
 Binary Frames are used for two paths with the same format, only the direction differs:
 
-- `input.audio.*` (Platform → Developer): when developer provides ASR, the platform forwards raw user audio to the developer
-- `response.audio.*` (bidirectional): whoever provides TTS sends it — developer pushes synthesized audio; platform pushes when platform provides TTS
+- `input.voice.*` (bidirectional): whoever provides ASR sends it, developer pushes when developer provides ASR; platform pushes when platform provides ASR
+- `response.audio.*` (bidirectional): whoever provides TTS sends it — developer pushes when developer provides TTS; platform pushes when platform provides TTS
 
 For the complete Header field definition see [PROTOCOL](PROTOCOL.md).
 
