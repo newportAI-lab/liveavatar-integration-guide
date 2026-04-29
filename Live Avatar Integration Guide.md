@@ -52,19 +52,30 @@ Deliver the `token` (i.e. `sessionToken`) to the frontend.
 
 The frontend SDK uses the `sessionToken` to automatically initiate the session and join the room:
 
-```javascript
+```ts
 import { createClient } from '@sanseng/livekit-ws-sdk';
 
 const client = createClient({
-  avatarId: 'your_avatar_id',
-  video: { containerElement: document.getElementById('avatar') },
+  connectConfig: {
+    type: 'auth',
+    config: {
+      avatarId: 'your-avatar-id'
+      // authToken can be omitted here and set later via client.setAuthToken('...')
+    },
+  },
+  http: {
+    baseURL: 'https://your-api.example.com/...',
+    headers: {
+      /* Optional */
+    },
+  },
+  video: {
+    containerElement: document.getElementById('avatar')!,
+  },
 });
 
-client.setAuthToken(sessionToken);  // sessionToken delivered by your backend
+client.setAuthToken('jwt-or-business-token');
 await client.connect();             // SDK internally calls /session/start and joins the RTC room
-
-client.startAudioCapture();                        // Enable microphone
-client.sendTextQuestion('Hello, please introduce yourself');   // Or send text
 ```
 
 **At this point your live avatar is ready for conversation.** 🎉
@@ -235,6 +246,27 @@ Standard Implementation Flow:
 2. Platform service validates resources and initializes the streaming pipeline.
 
 3. Backend service receives the payload; it must store the sessionId for tracking and deliver the userToken + sfuUrl to the frontend client.
+
+Now you can start the avatar in your frontend:
+
+```ts
+import { createClient } from '@sanseng/livekit-ws-sdk';
+
+const client = createClient({
+  connectConfig: {
+    type: 'direct',
+    config: {
+      sfuUrl: 'wss://your-livekit-host',
+      userToken: 'your-room-token',
+    },
+  },
+  video: {
+    containerElement: document.getElementById('avatar')!,
+  },
+});
+await client.connect();
+
+```
 
 # VI. WebSocket Integration Mode
 
