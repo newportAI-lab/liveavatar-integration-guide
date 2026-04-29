@@ -63,12 +63,6 @@ const client = createClient({
       // authToken can be omitted here and set later via client.setAuthToken('...')
     },
   },
-  http: {
-    baseURL: 'https://your-api.example.com/...',
-    headers: {
-      /* Optional */
-    },
-  },
   video: {
     containerElement: document.getElementById('avatar')!,
   },
