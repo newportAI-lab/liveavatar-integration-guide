@@ -71,81 +71,6 @@ client.sendTextQuestion('Hello, please introduce yourself');   // Or send text
 
 ---
 
-## Step 6: Call `/session/start` (Backend)
-
-> In default and API Key Hosting modes, the frontend SDK handles this call internally.
-
-Use your API Key to call the session start endpoint:
-
-```bash
-POST https://facemarket.ai/vih/dispatcher/v1/session/start
-Authorization: Bearer <API_KEY>
-Content-Type: application/json
-
-{
-  "avatarId": "your_avatar_id"
-}
-```
-
-**Request Parameters:**
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `avatarId` | String | Yes | Digital human avatar ID |
-| `userId` | String | No | User ID |
-| `voiceId` | String | No | Voice parameter ID |
-| `roomName` | String | No | LiveKit Room name (required in Plugin mode) |
-| `livekitUrl` | String | No | LiveKit WebSocket URL (required in Plugin mode) |
-| `agentIdentity` | String | No | Developer agent participant identity (Plugin mode) |
-| `rendererToken` | String | No | Renderer JWT signed by Plugin using developer's LK credentials (Plugin mode) |
-| `coordinatorToken` | String | No | Coordinator JWT signed by Plugin (Plugin mode) |
-
-**Success Response (Http 200):**
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "sessionId": "sess_abc123",
-    "sfuUrl": "wss://sfu.example.com/room/xxx",
-    "userToken": "eyJhbGc...",
-    "agentWsUrl": "ws://localhost:8080/agent/ws",
-    "coordinatorToken": "eyJhbGc..."
-  }
-}
-```
-
-**Response Fields:**
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `code` | int | `0` for success |
-| `message` | String | `"success"` |
-| `data.sessionId` | String | Session ID for this session |
-| `data.sfuUrl` | String | SFU URL for JS to join the room |
-| `data.userToken` | String | Token for JS to join the room |
-| `data.agentWsUrl` | String | WebSocket URL for developer to connect (WS Inbound mode) |
-| `data.coordinatorToken` | String | Coordinator JWT signed by Plugin (Plugin mode) |
-
-**Failure Response:**
-
-```json
-{
-  "code": 50000,
-  "message": "Avatar not found",
-  "data": null
-}
-```
-
-> **Processing Flow:**
-> 1. Backend calls `POST /session/start` with `avatarId`
-> 2. Platform validates the avatar and starts a stream session
-> 3. Platform returns `sessionId`, `sfuUrl`, `userToken`, and optionally `agentWsUrl`
-> 4. Backend delivers `userToken` + `sfuUrl` to the frontend; stores `sessionId` for downstream use
-
----
-
 > **Need to integrate your own LLM / Agent / business system?** Continue reading the advanced modes below.
 
 ---
@@ -261,7 +186,57 @@ We understand that hosting an API Key with a third-party platform is a significa
 
 ---
 
-# V. WebSocket Integration Mode
+# V. Start A New Session From Backend
+
+Integration with WebSocket or WebRTC mode, the session must be initiated via a server-to-server call. This step allocates resources, prepares the renderer, and generates the necessary tokens for participants.
+
+The Start Interface: POST /session/start
+Endpoint: <https://facemarket.ai/vih/dispatcher/session/start>
+
+Authentication: Authorization: Bearer <API_KEY>
+
+Request Body:
+
+```json
+{
+  "avatarId": "string"
+}
+```
+
+Or for BYO RTC
+
+```json
+{
+  "avatarId": "string",
+  "roomName": "string",
+  "agentIdentity": "string",
+  "sfuUrl": "string",
+  "coordinatorToken": "string",
+  "rendererToken": "string",
+}
+```
+
+Success Response (200 OK):
+
+| Field             | Type   | Description                                                                |
+|------------------|--------|-----------------------------------------------------------------------------|
+| code             | int    | 0 for success                                                               |
+| message          | String | Status message (e.g., "success")                                            |
+| data.sessionId   | String | Unique identifier for the current session instance                          |
+| data.sfuUrl      | String | The LiveKit SFU endpoint for the JS SDK/Agent to join                       |
+| data.userToken   | String | Token for the end-user (frontend) to join the room                          |
+| data.agentToken   | String | (Platform RTC only)Token for the agent to join the room                          |
+| data.agentWsUrl  | String | (WS Inbound only) The WebSocket URL for the developer backend to connect    |
+
+Standard Implementation Flow:
+
+1. Backend service calls POST /session/start with the avatarId.
+
+2. Platform service validates resources and initializes the streaming pipeline.
+
+3. Backend service receives the payload; it must store the sessionId for tracking and deliver the userToken + sfuUrl to the frontend client.
+
+# VI. WebSocket Integration Mode
 
 In WebSocket mode, the developer backend fully controls conversation logic (LLM / Agent / business systems) while the platform handles RTC audio/video and avatar rendering.
 
@@ -276,7 +251,7 @@ Both sub-modes use the **exact same protocol**. The only difference is which par
 
 ---
 
-## 5.1 WS Outbound (Platform Connects to Developer WS)
+## 6.1 WS Outbound (Platform Connects to Developer WS)
 
 The developer deploys a WebSocket server and registers its address (`wsEndpoint`) in the Avatar configuration. After the session starts, the **platform actively connects** to the developer's WS Server.
 
@@ -337,7 +312,7 @@ sequenceDiagram
 
 ---
 
-## 5.2 WS Inbound (Developer Connects to Platform WS)
+## 6.2 WS Inbound (Developer Connects to Platform WS)
 
 The platform dynamically allocates a WS endpoint (`agentWsUrl`) for each session. The **developer backend actively connects** to the platform. No public-facing server required.
 
@@ -400,7 +375,7 @@ sequenceDiagram
 
 ---
 
-## 5.3 WebSocket Protocol Reference
+## 6.3 WebSocket Protocol Reference
 
 > For the complete protocol definition see [PROTOCOL](PROTOCOL.md). This section lists the core events.
 
@@ -469,7 +444,7 @@ https://github.com/newportAI-lab/liveavatar-channel-python
 
 ---
 
-# VI. WebRTC Integration Mode
+# VII. WebRTC Integration Mode
 
 In WebRTC mode, the developer implements their own **agent** that subscribes to user audio directly in the RTC room, runs AI inference, and publishes the driving audio track. **The platform does not participate in the AI inference pipeline** — it only subscribes to the agent's audio and renders the avatar.
 
@@ -483,7 +458,7 @@ The two sub-modes differ in **which party owns the LiveKit SFU**:
 
 ---
 
-## 6.1 Platform RTC (Platform-owned LiveKit)
+## 7.1 Platform RTC (Platform-owned LiveKit)
 
 The platform owns the LiveKit SFU. After the developer implements an agent, it joins the room with the identity `agent_{sessionId}`. The **platform automatically subscribes to the Audio Track under that identity to drive the avatar's lip sync** — no additional configuration required.
 
@@ -501,13 +476,13 @@ sequenceDiagram
     Platform->>Renderer: Launch renderer instance (with rendererToken)
     Renderer->>LiveKit: Join room (identity: renderer_{sessionId})
     Platform->>LiveKit: Join room (identity: coordinator_{sessionId})
-    Platform-->>Backend: {sessionId, userToken, agentToken, livekitUrl}
+    Platform-->>Backend: {sessionId, userToken, agentToken, sfuUrl}
 
     par End user joins
-        Backend->>Client: Deliver userToken & livekitUrl
+        Backend->>Client: Deliver userToken & sfuUrl
         Client->>LiveKit: Join room (identity: user)
     and Agent joins
-        Backend->>Agent: Deliver agentToken & livekitUrl
+        Backend->>Agent: Deliver agentToken & sfuUrl
         Agent->>LiveKit: Join room (identity: agent_{sessionId})
     end
 
@@ -545,7 +520,7 @@ sequenceDiagram
 
 ---
 
-## 6.2 BYO RTC (Developer-owned LiveKit)
+## 7.2 BYO RTC (Developer-owned LiveKit)
 
 The platform shifts from "fully managed service provider" to a **"live avatar rendering plugin"**. All media streams flow entirely within the developer's SFU; the platform renderer joins the developer's LiveKit room as a participant. Token issuance authority belongs entirely to the developer.
 
@@ -562,17 +537,17 @@ sequenceDiagram
     Backend->>Backend: Create LiveKit room and issue three token types
     Note right of Backend: userToken (Sub Video/Audio, Pub Audio)<br/>agentToken (Sub Audio, Pub Audio/Data)<br/>rendererToken (Sub Audio/Data, Pub Video/Audio)
 
-    Backend->>Platform: POST /session/start {avatarId, livekitUrl, rendererToken, coordinatorToken}
+    Backend->>Platform: POST /session/start {avatarId, sfuUrl, rendererToken, coordinatorToken}
     Platform->>Renderer: Schedule renderer instance
-    Renderer->>DevLiveKit: Join room (identity: newport-renderer, kind: AGENT)
-    Platform->>DevLiveKit: Join room (identity: newport-coordinator)
+    Renderer->>DevLiveKit: Join room (identity: facemarket-renderer, kind: AGENT)
+    Platform->>DevLiveKit: Join room (identity: facemarket-coordinator)
     Platform-->>Backend: {sessionId}
 
     par End user joins
-        Backend->>Client: Deliver userToken & livekitUrl
+        Backend->>Client: Deliver userToken & sfuUrl
         Client->>DevLiveKit: Join room (identity: user)
     and Agent joins
-        Backend->>Agent: Deliver agentToken & livekitUrl
+        Backend->>Agent: Deliver agentToken & sfuUrl
         Agent->>DevLiveKit: Join room (identity: agent_{sessionId})
     end
 
@@ -609,7 +584,7 @@ sequenceDiagram
 
 ---
 
-# VII. Frontend SDK Docs
+# VIII. Frontend SDK Docs
 
 Frontend integration code examples are in Chapter I, Quick Start Step 5.
 
@@ -617,12 +592,12 @@ The JS SDK provides richer capabilities (subtitle callbacks, emotion control, in
 
 ---
 
-# VIII. Testing with the Sandbox Environment
+# IX. Testing with the Sandbox Environment
 
 We provide 30 free minutes of testing quota per month, available in the sandbox environment. The sandbox uses the same protocol as production and can be used for full end-to-end flow verification.
 
 ---
 
-# IX. FAQ
+# X. FAQ
 
 ## Common Error Codes
