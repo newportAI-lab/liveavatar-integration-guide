@@ -202,7 +202,7 @@ Start a live avatar session.
 **Request**
 
 ```bash
-curl -X POST "https://facemarket.ai/vih/dispatcher/session/start" \
+curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
   -H "Authorization: Bearer <API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -213,7 +213,7 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/session/start" \
 **Request (BYO RTC)**
 
 ```bash
-curl -X POST "https://facemarket.ai/vih/dispatcher/session/start" \
+curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
   -H "Authorization: Bearer <API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
