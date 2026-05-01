@@ -330,9 +330,12 @@ sequenceDiagram
         Platform->>Backend: input.asr.final (final recognition result)
     else Voice input — Developer provides ASR / Omni
         Client->>SFU: Publish microphone audio
-        Platform->>Backend: input.audio.start
-        Platform->>Backend: Binary Frame (raw PCM/Opus audio stream)
-        Platform->>Backend: input.audio.finish
+        Platform->>Backend: Binary Frame (continuous raw audio, no VAD/segmentation)
+        Backend->>Backend: Developer VAD + ASR
+        Backend-->>Platform: input.voice.start
+        Backend-->>Platform: input.asr.partial (streaming)
+        Backend-->>Platform: input.voice.finish
+        Backend-->>Platform: input.asr.final
     else Text input
         Client->>Platform: input.text (Data Channel)
         Platform->>Backend: input.text {text}
@@ -393,9 +396,12 @@ sequenceDiagram
         Platform->>Backend: input.asr.final (final recognition result)
     else Voice input — Developer provides ASR / Omni
         Client->>SFU: Publish microphone audio
-        Platform->>Backend: input.audio.start
-        Platform->>Backend: Binary Frame (raw PCM/Opus audio stream)
-        Platform->>Backend: input.audio.finish
+        Platform->>Backend: Binary Frame (continuous raw audio, no VAD/segmentation)
+        Backend->>Backend: Developer VAD + ASR
+        Backend-->>Platform: input.voice.start
+        Backend-->>Platform: input.asr.partial (streaming)
+        Backend-->>Platform: input.voice.finish
+        Backend-->>Platform: input.asr.final
     else Text input
         Client->>Platform: input.text (Data Channel)
         Platform->>Backend: input.text {text}
