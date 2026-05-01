@@ -228,15 +228,29 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
 
 Success Response (200 OK):
 
-| Field             | Type   | Description                                                                |
-|------------------|--------|-----------------------------------------------------------------------------|
-| code             | int    | 0 for success                                                               |
-| message          | String | Status message (e.g., "success")                                            |
-| data.sessionId   | String | Unique identifier for the current session instance                          |
-| data.sfuUrl      | String | The LiveKit SFU endpoint for the JS SDK/Agent to join                       |
-| data.userToken   | String | Token for the end-user (frontend) to join the room                          |
-| data.agentToken   | String | (Platform RTC only)Token for the agent to join the room                          |
-| data.agentWsUrl  | String | (WS Inbound only) The WebSocket URL for the developer backend to connect    |
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "sessionId": "sess_xxx",
+    "sfuUrl": "wss://facemarket.ai/livekit",
+    "userToken": "eyJ...",
+    "agentToken": "eyJ...",
+    "agentWsUrl": "wss://facemarket.ai/vih/dispatcher/v1/ws/agent?token=..."
+  }
+}
+```
+
+| Field | Type | Mode | Description |
+| --- | --- | --- | --- |
+| `code` | int | All | 0 for success |
+| `message` | String | All | Status message (e.g., "success") |
+| `data.sessionId` | String | All | Unique identifier for the current session instance |
+| `data.sfuUrl` | String | Platform RTC / WS | The LiveKit SFU endpoint for the JS SDK / Agent to join |
+| `data.userToken` | String | Platform RTC / WS | Token for the end user (frontend) to join the room |
+| `data.agentToken` | String | Platform RTC only | Token for the agent to join the room |
+| `data.agentWsUrl` | String | WS Inbound only | WebSocket URL for the developer backend to connect to the platform |
 
 Standard Implementation Flow:
 
@@ -623,7 +637,45 @@ The JS SDK provides richer capabilities (subtitle callbacks, emotion control, in
 
 # IX. Testing with the Sandbox Environment
 
-We provide 30 free minutes of testing quota per month, available in the sandbox environment. The sandbox uses the same protocol as production and can be used for full end-to-end flow verification.
+We provide 30 free minutes of testing quota per month in the sandbox environment. The sandbox uses the same protocol as production and supports full end-to-end flow verification.
+
+To route a session to the sandbox, pass the header `X-Env-Sandbox: true`. The method differs depending on who calls `/session/start`:
+
+## Backend Calls /session/start Directly
+
+Add the header to your server-to-server request:
+
+```bash
+curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -H "X-Env-Sandbox: true" \
+  -d '{
+    "avatarId": "string"
+  }'
+```
+
+## Frontend SDK Calls /session/start (auth mode)
+
+Set `sandbox: true` in the client config. The SDK automatically adds `X-Env-Sandbox: true` to every HTTP request:
+
+```ts
+import { createClient } from '@sanseng/liveavatar-js-sdk';
+
+const client = createClient({
+  connectConfig: {
+    type: 'auth',
+    config: { avatarId: 'demo-avatar' },
+  },
+  http: {
+    baseURL: 'https://facemarket.ai/vih/dispatcher',
+    headers: { /* custom static headers */ },
+  },
+  sandbox: true,
+});
+```
+
+Custom headers in `http.headers` are merged with the sandbox header (when enabled) and sent together on every request.
 
 ---
 
