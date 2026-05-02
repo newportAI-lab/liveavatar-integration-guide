@@ -2,6 +2,8 @@
 
 > In default mode, the platform handles the full ASR → LLM → TTS pipeline. You only need to configure a system prompt in the console — add a single backend endpoint to exchange a token, and a few lines of frontend code to get your live avatar speaking.
 
+> 💡 **Already have an API Key and avatarId?** Skip Steps 1–2 — these are one-time setup. Go directly to [Step 3](#step-3-install-the-frontend-sdk).
+
 ## Step 1: Get an API Key
 
 Log in to the console → go to **API Key Management** → click **Create API Key**, then copy and store it safely.
