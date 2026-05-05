@@ -16,7 +16,7 @@ Developer documentation for integrating [Facemarket Live Avatar](https://facemar
 | IV. API Key Hosting | Let the platform proxy your LLM — no inference infra required |
 | V. WebSocket Mode | Full control over conversation logic via WS Outbound or WS Inbound |
 | VI. WebRTC Mode | Custom voice agent with Platform RTC or BYO (self-managed) RTC |
-| VII. Frontend SDK | JS SDK reference for the `@sanseng/livekit-ws-sdk` package |
+| VII. Frontend SDK | JS SDK reference for the `@sanseng/liveavatar-js-sdk` package |
 | VIII. Sandbox | 30 free minutes/month for end-to-end testing |
 | IX. FAQ | Common error codes and troubleshooting |
 
