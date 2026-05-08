@@ -255,6 +255,7 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `avatarId` | String | ✅ | Unique avatar identifier |
+| `voiceId` | String | ❌ | Override the avatar's default voice for this session |
 | `sessionId` | String | ❌ | Include to reuse an existing session (reconnect); omit to create a new session |
 | `agentIdentity` | String | ✅ BYO RTC | Agent identity |
 | `sfuUrl` | String | ✅ BYO RTC | Developer LiveKit SFU URL |
