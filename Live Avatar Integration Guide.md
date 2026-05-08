@@ -297,6 +297,36 @@ Standard Implementation Flow:
 2. Platform service validates resources and initializes the streaming pipeline. On reconnect, the existing session and room are reused.
 3. Backend service receives the payload; it must store the `sessionId` for tracking and future reconnects, and deliver the `userToken` + `sfuUrl` to the frontend client. On reconnect, old credentials are replaced with the new ones from the response.
 
+### Stop a Session
+
+**Endpoint:** `POST /v1/session/stop`
+
+**URL:** `https://facemarket.ai/vih/dispatcher/v1/session/stop`
+
+**Authentication:** `Authorization: Bearer <API_KEY>`
+
+```bash
+curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/stop" \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "sess_xxx"
+  }'
+```
+
+Success Response (200 OK):
+
+```json
+{
+  "code": 0,
+  "message": "success"
+}
+```
+
+You can also stop a session by sending the `session.stop` event via WebSocket or Data Channel, or by simply disconnecting from the RTC room.
+
+---
+
 Now you can start the avatar in your frontend:
 
 ```ts
@@ -494,6 +524,7 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | `response.audio.finish` | Audio stream end. **Sent by whoever provides TTS** (same rule) |
 | `control.interrupt` | Interrupt the current avatar broadcast |
 | `system.prompt` | Idle wake text (triggers the avatar to speak proactively) |
+| `session.stop` | Request to end the current session |
 | `error` | Error reporting |
 
 ### Audio Transport (Binary Frame)
@@ -720,3 +751,271 @@ Custom headers in `http.headers` are merged with the sandbox header (when enable
 # X. FAQ
 
 ## Common Error Codes
+
+Errors fall into two categories: **system errors** (temporary infrastructure issues — retry) and **actionable errors** (caused by your account state or request — the message tells you what to fix).
+
+### System Errors (Retryable)
+
+These indicate temporary resource constraints on the platform side. No action is needed on your part other than retrying:
+
+| Error Code | Identifier | What It Means | Client-Facing Message |
+|------------|------------|---------------|----------------------|
+| 40001 | `NO_ORCHESTRATION_POD` | The scheduling layer is temporarily at capacity. This is a transient infrastructure condition. | `Service is temporarily unavailable. Please try again in a few seconds.` |
+| 40002 | `NO_RENDERER_POD` | The rendering layer is temporarily at capacity. Same user experience as 40001. | Same as 40001 |
+| 40003 | `SESSION_START_FAILED` | The session could not be initialized due to an internal processing error. | `Failed to launch virtual avatar. Please try again.` |
+
+> For 40001 and 40002, implement a retry with a 2–3 second backoff. If the error persists beyond 3 retries, prompt the user to wait longer or contact support.
+
+### Actionable Errors (Fix Required)
+
+These errors indicate an issue with your account, configuration, or request. Read the message carefully — it tells you what to correct:
+
+| Error Code | Identifier | What It Means | Client-Facing Message |
+|------------|------------|---------------|----------------------|
+| 40004 | `PRINCIPAL_UNIDENTIFIED` | The API key or credential in your request could not be mapped to a valid account. This usually means the key is missing, malformed, or has been revoked. | `Unable to identify your account. Please check your API key or contact your administrator.` |
+| 40005 | `CONCURRENCY_LIMIT_EXCEEDED` | You have reached the maximum number of simultaneous sessions allowed by your current subscription plan. Each plan includes a fixed number of concurrent avatar instances. | `Maximum concurrent sessions reached. Please close an active session and try again, or upgrade your plan.` |
+| 40008 | (merged into 40005) | Same cause as 40005 — concurrent session limit exceeded. | Same as 40005 |
+| 40006 | `QUOTA_EXHAUSTED` | You have used all of the time or credit allocation included in your current plan. This could be monthly minutes, one-time trial credits, or a prepaid balance. | `Your usage limit has been reached. Please top up your account or upgrade your plan.` |
+| 40007 | `SESSION_ACCESS_DENIED` | Your request attempted to access a session that belongs to a different account. This is an authorization boundary — you can only interact with sessions created under your own credentials. | `Access denied: you do not have permission to access this session. Please check the session ID and try again.` |
+
+### Handling Guidance
+
+| Scenario | Recommendation |
+|----------|---------------|
+| 40001 / 40002 persists | Retry up to 3 times with 2–3s backoff. If still failing, display the message and offer a "Contact Support" link. |
+| 40003 | Retry once. If it persists, check your avatar configuration in the console (asset validity, publish status). |
+| 40004 | Verify the `Authorization: Bearer <API_KEY>` header is present and the key is active in the console. If the key is valid, contact your account administrator. |
+| 40005 | Close unused sessions via the console or API, or upgrade your plan for more concurrent slots. |
+| 40006 | Check your usage dashboard in the console. Top up credits or upgrade to a plan with a higher limit. |
+| 40007 | Verify the `sessionId` in your request belongs to your account. If you are attempting a reconnect, ensure you stored the correct `sessionId` from the original `/session/start` response. |
+
+---
+
+## Token & Authentication
+
+### Q: How long is a sessionToken valid?
+
+2 minutes. It is designed for one-time exchange — your backend calls `/auth/session/token`, delivers it to the frontend, and the frontend immediately calls `/session/start`. Do not cache or reuse a sessionToken.
+
+### Q: What happens when the sessionToken expires?
+
+The `/session/start` call returns `401 Unauthorized`. The frontend should request a fresh token from your backend and retry. In the JS SDK (auth mode), the SDK surfaces this as a connection error — listen to the `error` event and refresh the token from there.
+
+### Q: Can I refresh a sessionToken without hitting my backend?
+
+No. The token exchange requires your API Key, which must never be exposed to the frontend. Always route the refresh through your backend.
+
+### Q: How do I rotate a compromised API Key?
+
+1. Log in to the console → **API Key Management**.
+2. Click **Revoke** on the compromised key. All sessions using tokens issued by that key will fail on their next `session/start` call.
+3. Click **Create API Key** to generate a new key.
+4. Update your backend configuration with the new key.
+
+### Q: Does revoking an API Key kill active sessions?
+
+No. Active sessions are bound to the session credentials, not the issuing API Key. The revoke only blocks future `/auth/session/token` and `/session/start` calls that use the revoked key.
+
+---
+
+## Session Lifecycle
+
+### Q: How long does a session last?
+
+There is no fixed maximum duration. A session stays active as long as the connection remains open and audio/video is flowing. Idle sessions (no user interaction) may be closed by the platform after a configured timeout — check your avatar settings in the console.
+
+### Q: How do I end a session?
+
+You can stop a session in three ways:
+
+1. **REST API**: `POST /v1/session/stop` with `{ "sessionId": "sess_xxx" }` (authenticated with API Key, same base URL as `/session/start`).
+2. **Data Channel / WebSocket**: send the `session.stop` event from your agent or frontend.
+3. **Connection-driven**: disconnecting from the RTC room or WebSocket also triggers teardown.
+
+### Q: What should I do when I receive session.closing?
+
+1. Stop sending new events or audio frames to the platform.
+2. Close the WebSocket connection from your side.
+3. Do not attempt to reconnect with the same `sessionId` — a closing session cannot be reused. Call `/session/start` without a `sessionId` to create a new one.
+
+### Q: Can I reuse a sessionId after disconnect?
+
+Only if the session is still `active`. Call `/session/start` with the `sessionId` to reconnect. If the session has been closed (timeout, idle, explicit disconnect), the API returns `403` — create a new session instead.
+
+### Q: What triggers the idle wake-up event?
+
+The platform's session state machine monitors user interaction. When the user has been inactive and the session enters an idle state for the configured duration, the platform fires `system.idleTrigger`. Your agent can respond with a proactive message via `system.prompt`.
+
+---
+
+## Reconnection & Recovery
+
+### Q: How do I reconnect after a network drop?
+
+Call `POST /v1/session/start` with `{ "avatarId": "...", "sessionId": "sess_xxx" }`. The platform validates that the session is still `active`, then returns fresh credentials (`userToken`, `sfuUrl`, etc.). Use these new credentials to rejoin — do not reuse old tokens.
+
+### Q: What happens to the old tokens after reconnection?
+
+The old tokens are invalidated immediately. All participants must use the new tokens from the reconnection response.
+
+### Q: What if the session has already been closed when I try to reconnect?
+
+The API returns `403 Forbidden`. The session may have been closed due to idle timeout, explicit stop, or an internal error. Call `/session/start` without a `sessionId` to create a new session.
+
+### Q: Does the frontend SDK handle reconnection automatically?
+
+Auto-reconnect is on the SDK roadmap for a future release. In the current version, you should listen to the connection state events and implement your own retry logic — call your backend to re-run `/session/start` with the existing `sessionId`, then feed the new credentials to the SDK via `client.connect()`.
+
+### Q: In WebSocket mode, what happens if the WS connection drops?
+
+- **WS Outbound**: the platform will attempt to reconnect to your registered `wsEndpoint`. Ensure your server handles duplicate `session.init` gracefully (check if `sessionId` is already active and respond with `session.ready`).
+- **WS Inbound**: you must re-establish the connection. Call `/session/start` with the `sessionId` to get a new `agentWsUrl`, then connect to it.
+
+---
+
+## Sandbox vs Production
+
+### Q: What are the limits of the sandbox environment?
+
+| Resource | Sandbox Limit |
+|----------|--------------|
+| Monthly usage | 30 free minutes |
+| Concurrent sessions | 1 |
+| Avatar assets | Limited to sandbox-created avatars |
+
+Production plans have higher or unlimited quotas depending on your subscription tier.
+
+### Q: Are there any functional differences between sandbox and production?
+
+No. The sandbox uses the same protocols, endpoints, and rendering pipeline as production. The only difference is quota enforcement. This means you can develop and test your full integration in sandbox and switch to production with zero code changes.
+
+### Q: How do I switch from sandbox to production?
+
+Remove the `X-Env-Sandbox: true` header from your backend requests, or set `sandbox: false` (or omit it) in the frontend SDK config. That's it — the base URL and all API contracts are identical.
+
+### Q: How do I check my remaining sandbox quota?
+
+Log in to the console → navigate to the usage dashboard. The sandbox section shows your remaining minutes for the current billing cycle.
+
+---
+
+## WebSocket Integration
+
+### Q: In WS Outbound mode, the platform cannot connect to my WS server. What should I check?
+
+1. Your `wsEndpoint` must be a publicly reachable `wss://` URL (the platform does not connect to `ws://` or private IPs).
+2. Your server must accept TLS connections on port 443.
+3. If you have a firewall or IP allowlist, whitelist the platform's outbound IP ranges (contact support for the current list).
+4. Verify your server responds to the WebSocket upgrade handshake within 5 seconds.
+
+### Q: In WS Inbound mode, why shouldn't I share the agentWsUrl with the frontend?
+
+The `agentWsUrl` embeds a one-time token bound to the current `sessionId`. If exposed to the frontend:
+
+- The token can be used by a malicious client to impersonate your agent and inject conversation content.
+- The token is single-use — the frontend consuming it would prevent your backend from connecting.
+
+Always keep `agentWsUrl` on your backend.
+
+### Q: What is the byte order of binary audio frames?
+
+All binary frame header fields use **network byte order (big-endian)**. The audio payload format (PCM or Opus) is negotiated during session configuration — check your avatar settings in the console.
+
+### Q: Can I mix text and audio responses in the same session?
+
+Yes. The protocol supports switching between `response.chunk` (text → platform TTS) and `response.audio.*` (developer-provided audio) at any time. The platform handles the transition seamlessly.
+
+### Q: What happens if I send malformed JSON in a text message?
+
+The platform closes the WebSocket connection with a close code of `1002` (protocol error). Ensure your JSON is well-formed and matches the event schema defined in the protocol reference.
+
+---
+
+## WebRTC Integration
+
+### Q: What happens if my agent joins with the wrong identity prefix?
+
+The platform's renderer automatically subscribes to the audio track published under the identity `agent_{sessionId}`. If your agent uses a different identity, the renderer will not pick up the driving audio — the avatar will appear silent even though everything else looks connected. Always format the agent identity as `agent_{sessionId}`.
+
+### Q: In BYO RTC mode, the renderer cannot join my LiveKit room. How do I debug?
+
+1. Verify your `sfuUrl` is publicly reachable from the internet.
+2. Confirm the `rendererToken` has not expired and includes the correct room name.
+3. Check that the token grants `canPublish: true` and `canSubscribe: true` for both audio and video.
+4. Ensure your LiveKit server's `rtc_config.tcp_port` (default 7881) and `rtc_config.udp_port` range are open to inbound traffic.
+5. Contact support with the session ID and the approximate timestamp of the failed join attempt.
+
+### Q: Do I need to manage renderer lifecycle in BYO RTC mode?
+
+No. The platform manages renderer startup and shutdown via the `/session/start` and `/session/stop` API calls. You only need to issue valid tokens and keep your LiveKit room accessible.
+
+### Q: Can I have multiple agents in the same room?
+
+In Platform RTC mode, each session has exactly one `agent_{sessionId}` identity. To have multiple agent instances, create multiple sessions (one per agent) in the same room by passing the same `roomId` on each `/session/start` call. Each agent joins with its own session-scoped identity. Note that each session consumes a concurrent slot on your plan.
+
+---
+
+## Troubleshooting
+
+### Q: The API returned success but I see a black screen. What do I check?
+
+Walk through these steps in order:
+
+1. **Credentials**: confirm the frontend received a valid `userToken` and `sfuUrl` from your backend.
+2. **Network**: verify the client can reach `sfuUrl` on port 443 — corporate firewalls or VPNs may block WebRTC traffic.
+3. **Browser**: ensure you are using a WebRTC-supported browser (see the supported browser table below).
+4. **Console logs**: open the browser DevTools → Console and look for LiveKit connection errors or SDK warnings.
+5. **Session state**: check whether `/session/start` returned a valid `sessionId` and your backend stored it correctly.
+
+### Q: Audio works but the avatar's lips don't move. Why?
+
+This usually means the renderer is not receiving the driving audio track. Common causes:
+
+- **WebSocket mode**: verify your `response.chunk` / `response.audio.*` events are sent in the correct sequence (`response.start` → `response.chunk` → `response.done`, or `response.audio.start` → binary frames → `response.audio.finish`).
+- **WebRTC mode**: confirm your agent is publishing audio under the identity `agent_{sessionId}` and the track is not muted.
+- **Audio format**: ensure the audio format (sample rate, encoding) matches your avatar's configuration.
+
+### Q: The avatar responds slowly. What can I optimize?
+
+Latency accumulates across the pipeline. Check each stage:
+
+1. **Network**: minimize the physical distance between your backend and the platform's servers. For WebSocket mode, deploy your agent close to the platform region.
+2. **LLM**: use streaming responses. Send `response.chunk` as soon as the first token arrives — do not wait for the full response.
+3. **TTS**: if using platform TTS, streaming synthesis begins on the first `response.chunk`. Sending text earlier means audio starts sooner.
+4. **SDK buffer**: the JS SDK maintains a small jitter buffer for smooth playback. This is not configurable in the current version.
+
+### Q: Which browsers are supported?
+
+| Browser | Minimum Version | Status |
+|---------|----------------|--------|
+| Chrome | 90+ | Supported |
+| Edge | 90+ | Supported |
+| Firefox | 90+ | Supported |
+| Chrome for Android | 90+ | Supported |
+| Safari / Mobile Safari (iOS) | — | Planned for a future release |
+
+WebRTC is required. Browsers in private/incognito mode may have limited WebRTC support — test in normal mode first.
+
+---
+
+## Contacting Support
+
+### Q: What information should I include when reporting an issue?
+
+Providing the following upfront will significantly speed up diagnosis:
+
+| Item | Why It Helps |
+|------|-------------|
+| `sessionId` | Pinpoints the exact session and all associated logs |
+| Approximate UTC timestamp | Correlates events across distributed systems |
+| Error code (e.g. 40005) | Narrows the root cause immediately |
+| Integration mode | Tells us which pipeline to inspect (WS Outbound / Inbound / Platform RTC / BYO RTC) |
+| `avatarId` | Links to your specific avatar configuration |
+| Client-side logs | Browser console output or SDK error events |
+| Network topology (BYO RTC) | Your LiveKit server region and any proxy/CDN in front of it |
+
+### Q: How do I reach support?
+
+- **Console**: use the in-console support chat or ticket system.
+- **Email**: send details to your account's designated support email.
+- **Emergency**: for production outages, mark your ticket as `P0` in the subject line.
