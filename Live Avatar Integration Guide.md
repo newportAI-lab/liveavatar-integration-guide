@@ -199,7 +199,13 @@ We understand that hosting an API Key with a third-party platform is a significa
 
 Integration with WebSocket or WebRTC mode, the session must be initiated via a server-to-server call. This step allocates resources, prepares the renderer, and generates the necessary tokens for participants.
 
-Start a live avatar session.
+**Endpoint:** `POST /v1/session/start`
+
+**URL:** `https://facemarket.ai/vih/dispatcher/v1/session/start`
+
+**Authentication:** `Authorization: Bearer <API_KEY>`
+
+### Request Body
 
 **Request (New Session)**
 
@@ -235,7 +241,6 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
   -d '{
     "avatarId": "string",
     "sessionId": "sess_xxx",
-    "roomName": "string",
     "agentIdentity": "string",
     "sfuUrl": "string",
     "coordinatorToken": "string",
@@ -251,7 +256,6 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
 |-----------|------|----------|-------------|
 | `avatarId` | String | ✅ | Unique avatar identifier |
 | `sessionId` | String | ❌ | Include to reuse an existing session (reconnect); omit to create a new session |
-| `roomName` | String | ✅ BYO RTC | Developer LiveKit room name |
 | `agentIdentity` | String | ✅ BYO RTC | Agent identity |
 | `sfuUrl` | String | ✅ BYO RTC | Developer LiveKit SFU URL |
 | `coordinatorToken` | String | ✅ BYO RTC | Token for coordinator to join the room |
@@ -273,15 +277,17 @@ Success Response (200 OK):
 }
 ```
 
-| Field | Type | Mode | Description |
-| --- | --- | --- | --- |
-| `code` | int | All | 0 for success |
-| `message` | String | All | Status message (e.g., "success") |
-| `data.sessionId` | String | All | Unique identifier for the current session instance |
-| `data.sfuUrl` | String | Platform RTC / WS | The LiveKit SFU endpoint for the JS SDK / Agent to join |
-| `data.userToken` | String | Platform RTC / WS | Token for the end user (frontend) to join the room |
-| `data.agentToken` | String | Platform RTC only | Token for the agent to join the room |
-| `data.agentWsUrl` | String | WS Inbound only | WebSocket URL for the developer backend to connect to the platform |
+### Response Parameters
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `code` | int | 0 for success |
+| `message` | String | Status message (e.g., "success") |
+| `data.sessionId` | String | Unique identifier for the current session instance |
+| `data.sfuUrl` | String | The LiveKit SFU endpoint for the JS SDK or Agent to join |
+| `data.userToken` | String | Token for the end user (frontend) to join the room |
+| `data.agentToken` | String | (Platform RTC mode only) Token for the agent to join the room |
+| `data.agentWsUrl` | String | (WS Inbound mode only) WebSocket URL for the developer backend to connect to the platform |
 
 Standard Implementation Flow:
 
@@ -364,12 +370,9 @@ sequenceDiagram
         Platform->>Backend: input.asr.final (final recognition result)
     else Voice input — Developer provides ASR / Omni
         Client->>SFU: Publish microphone audio
-        Platform->>Backend: Binary Frame (continuous raw audio, no VAD/segmentation)
-        Backend->>Backend: Developer VAD + ASR
-        Backend-->>Platform: input.voice.start
-        Backend-->>Platform: input.asr.partial (streaming)
-        Backend-->>Platform: input.voice.finish
-        Backend-->>Platform: input.asr.final
+        Platform->>Backend: input.audio.start
+        Platform->>Backend: Binary Frame (raw PCM/Opus audio stream)
+        Platform->>Backend: input.audio.finish
     else Text input
         Client->>Platform: input.text (Data Channel)
         Platform->>Backend: input.text {text}
@@ -432,12 +435,9 @@ sequenceDiagram
         Platform->>Backend: input.asr.final (final recognition result)
     else Voice input — Developer provides ASR / Omni
         Client->>SFU: Publish microphone audio
-        Platform->>Backend: Binary Frame (continuous raw audio, no VAD/segmentation)
-        Backend->>Backend: Developer VAD + ASR
-        Backend-->>Platform: input.voice.start
-        Backend-->>Platform: input.asr.partial (streaming)
-        Backend-->>Platform: input.voice.finish
-        Backend-->>Platform: input.asr.final
+        Platform->>Backend: input.audio.start
+        Platform->>Backend: Binary Frame (raw PCM/Opus audio stream)
+        Platform->>Backend: input.audio.finish
     else Text input
         Client->>Platform: input.text (Data Channel)
         Platform->>Backend: input.text {text}
@@ -476,7 +476,7 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | `input.text` | User sent text via Data Channel; platform forwards it |
 | `input.asr.partial` | Streaming intermediate ASR result (sent by platform when platform provides ASR) |
 | `input.asr.final` | Final ASR recognition result (sent by platform when platform provides ASR) |
-| `input.voice.start` | VAD detected user started speaking; in Developer ASR / Omni mode, the platform auto-clears the RTC playback buffer on receipt |
+| `input.voice.start` | VAD detected user started speaking |
 | `input.voice.finish` | VAD detected user stopped speaking |
 | `session.state` | State sync (IDLE / LISTENING / THINKING / SPEAKING, etc.) |
 | `system.idleTrigger` | User has been inactive for an extended period |
@@ -488,11 +488,11 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | --- | --- |
 | `session.ready` | Handshake response — **must** be sent after receiving `session.init` |
 | `response.start` | Optional. Configure TTS parameters for this reply (speed / volume / mood). Only effective when **platform provides TTS** |
-| `response.chunk` | Streaming text reply fragment |
-| `response.done` | End-of-text signal|
+| `response.chunk` | Streaming text reply fragment; used when platform provides TTS |
+| `response.done` | End-of-text signal; used when platform provides TTS |
 | `response.audio.start` | Audio stream start. **Sent by whoever provides TTS** (developer when developer provides TTS; platform when platform provides TTS) |
 | `response.audio.finish` | Audio stream end. **Sent by whoever provides TTS** (same rule) |
-| `control.interrupt` | Explicit programmatic interrupt (for scenarios not triggered by user input, e.g. backend timeout or business-logic override; the platform auto-clears the buffer on `input.text` and `input.voice.start`, so no explicit interrupt is needed in those flows) |
+| `control.interrupt` | Interrupt the current avatar broadcast |
 | `system.prompt` | Idle wake text (triggers the avatar to speak proactively) |
 | `error` | Error reporting |
 
