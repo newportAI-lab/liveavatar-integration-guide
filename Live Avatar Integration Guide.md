@@ -1017,5 +1017,5 @@ Providing the following upfront will significantly speed up diagnosis:
 ### Q: How do I reach support?
 
 - **Console**: use the in-console support chat or ticket system.
-- **Email**: send details to your account's designated support email.
+- **Email**: send details to [techsupport@newportai.com](mailto:techsupport@newportai.com).
 - **Emergency**: for production outages, mark your ticket as `P0` in the subject line.
