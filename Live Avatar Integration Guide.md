@@ -631,6 +631,12 @@ sequenceDiagram
 
 **Best for**: AI developers building custom voice agents, private knowledge base Q&A, scenarios requiring full control over conversation logic.
 
+### Python SDK
+
+We provide a Python SDK for Platform RTC mode that handles LiveKit room join, audio track subscribe/publish, and Data Channel communication:
+
+[https://github.com/newportAI-lab/liveavatar-platform-rtc-python](https://github.com/newportAI-lab/liveavatar-platform-rtc-python)
+
 ---
 
 ## 7.2 BYO RTC (Developer-owned LiveKit)
@@ -1018,4 +1024,5 @@ Providing the following upfront will significantly speed up diagnosis:
 
 - **Console**: use the in-console support chat or ticket system.
 - **Email**: send details to [techsupport@newportai.com](mailto:techsupport@newportai.com).
+- **GitHub Issues**: report integration problems and feature requests at [liveavatar-integration-guide/issues](https://github.com/newportAI-lab/liveavatar-integration-guide/issues).
 - **Emergency**: for production outages, mark your ticket as `P0` in the subject line.
