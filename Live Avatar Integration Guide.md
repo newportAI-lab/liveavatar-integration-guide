@@ -401,9 +401,9 @@ sequenceDiagram
         Platform->>Backend: input.asr.final (final recognition result)
     else Voice input — Developer provides ASR / Omni
         Client->>SFU: Publish microphone audio
-        Platform->>Backend: input.audio.start
+        Platform->>Backend: input.voice.start
         Platform->>Backend: Binary Frame (raw PCM/Opus audio stream)
-        Platform->>Backend: input.audio.finish
+        Platform->>Backend: input.voice.finish
     else Text input
         Client->>Platform: input.text (Data Channel)
         Platform->>Backend: input.text {text}
@@ -466,9 +466,9 @@ sequenceDiagram
         Platform->>Backend: input.asr.final (final recognition result)
     else Voice input — Developer provides ASR / Omni
         Client->>SFU: Publish microphone audio
-        Platform->>Backend: input.audio.start
+        Platform->>Backend: input.voice.start
         Platform->>Backend: Binary Frame (raw PCM/Opus audio stream)
-        Platform->>Backend: input.audio.finish
+        Platform->>Backend: input.voice.finish
     else Text input
         Client->>Platform: input.text (Data Channel)
         Platform->>Backend: input.text {text}
