@@ -773,7 +773,7 @@ These errors indicate an issue with your account, configuration, or request. Rea
 
 | Error Code | Identifier | What It Means | Client-Facing Message |
 |------------|------------|---------------|----------------------|
-| 40004 | `PRINCIPAL_UNIDENTIFIED` | The API key or credential in your request could not be mapped to a valid account. This usually means the key is missing, malformed, or has been revoked. | `Unable to identify your account. Please check your API key or contact your administrator.` |
+| 40004 | `PRINCIPAL_UNIDENTIFIED` | The API key or credential in your request could not be mapped to a valid account. This usually means the key is missing, malformed, or has been deactivated. | `Unable to identify your account. Please check your API key or contact your administrator.` |
 | 40005 | `CONCURRENCY_LIMIT_EXCEEDED` | You have reached the maximum number of simultaneous sessions allowed by your current subscription plan. Each plan includes a fixed number of concurrent avatar instances. | `Maximum concurrent sessions reached. Please close an active session and try again, or upgrade your plan.` |
 | 40006 | `QUOTA_EXHAUSTED` | You have used all of the time or credit allocation included in your current plan. This could be monthly minutes, one-time trial credits, or a prepaid balance. | `Your usage limit has been reached. Please top up your account or upgrade your plan.` |
 | 40007 | `SESSION_ACCESS_DENIED` | Your request attempted to access a session that belongs to a different account. This is an authorization boundary — you can only interact with sessions created under your own credentials. | `Access denied: you do not have permission to access this session. Please check the session ID and try again.` |
@@ -808,13 +808,13 @@ No. The token exchange requires your API Key, which must never be exposed to the
 ### Q: How do I rotate a compromised API Key?
 
 1. Log in to the console → **API Key Management**.
-2. Click **Revoke** on the compromised key. All sessions using tokens issued by that key will fail on their next `session/start` call.
+2. Click **Deactivate** on the compromised key. All sessions using tokens issued by that key will fail on their next `session/start` call.
 3. Click **Create API Key** to generate a new key.
 4. Update your backend configuration with the new key.
 
-### Q: Does revoking an API Key kill active sessions?
+### Q: Does deactivating an API Key kill active sessions?
 
-No. Active sessions are bound to the session credentials, not the issuing API Key. The revoke only blocks future `/auth/session/token` and `/session/start` calls that use the revoked key.
+No. Active sessions are bound to the session credentials, not the issuing API Key. The deactivation only blocks future `/auth/session/token` and `/session/start` calls that use the deactivated key.
 
 ---
 
