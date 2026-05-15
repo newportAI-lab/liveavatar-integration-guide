@@ -67,11 +67,9 @@ Used for "streaming / state"
 
 # Text Protocol Design
 
-## WebSocket Inbound / Outbound Modes
+## WebSocket Connection Model
 
-### Inbound Mode
-
-In Inbound mode, the Live Avatar service provides the WebSocket server address and the developer service connects to it as a client.
+The Live Avatar platform provides the WebSocket server and dynamically allocates a WS endpoint (`agentWsUrl`) for each session. The developer backend connects to the platform as a WebSocket client. No public-facing server is required on the developer side.
 
 ```mermaid
 sequenceDiagram
@@ -82,24 +80,18 @@ sequenceDiagram
     participant RTC as RTC Room (SFU)
     participant Avatar as Avatar Engine
 
-    %% Key difference: entire session establishment is server-side only
-    rect rgb(255, 240, 220)
-    Note over AppServer, Platform: [Inbound Key Difference]
     AppServer->>Platform: /session/start (API Key)
     Platform->>Avatar: Start avatar
     Avatar->>RTC: Join room
     Avatar->>Platform: Start complete
     Platform->>AppServer: { sessionId, userToken, agentWsUrl, sfuUrl }
     AppServer-->>Platform: Establish WebSocket connection via agentWsUrl
-    Note right of AppServer: No sessionToken or frontend involvement in session setup<br/>AppServer calls /session/start directly with API Key<br/>agentWsUrl returned directly to AppServer (never forwarded to frontend)<br/>AppServer initiates WebSocket connection (developer side is WS client)<br/>Developer side needs no public IP
-    end
+    Note right of AppServer: AppServer calls /session/start directly with API Key<br/>agentWsUrl is returned directly to AppServer (never forwarded to frontend)<br/>AppServer is the WebSocket client — no public IP needed
     AppServer->>User: { userToken, sfuUrl }
 
-    %% 2. RTC link establishment
     User->>RTC: Join room (userToken)
     User-->>RTC: Publish text/audio stream
 
-    %% 3. Core business loop
     Platform-->>RTC: Subscribe to user text/audio stream
     Platform->>AppServer: Forward to developer backend via WebSocket
 
@@ -110,68 +102,15 @@ sequenceDiagram
         AppServer-->>Avatar: Return reply audio stream
     end
 
-    %% 4. Avatar feedback
     Avatar->>RTC: Publish avatar audio/video stream
     RTC-->>User: Subscribe and render
 ```
 
-### Outbound Mode
-
-In Outbound mode, the developer service provides the WebSocket server address and the Live Avatar service connects to it as a client.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant User as User (Frontend SDK)
-    participant AppServer as Developer Backend
-    participant Platform as Live Avatar Service
-    participant RTC as RTC Room (SFU)
-    participant Avatar as Avatar Engine
-
-    %% Key difference: Outbound mode — backend calls /session/start directly, no sessionToken needed
-    rect rgb(220, 245, 220)
-    Note over AppServer, Platform: [Outbound Key Difference]
-    AppServer->>Platform: /session/start (API Key)
-    Platform-->>AppServer: Establish WebSocket connection (platform as Client)
-    Note left of AppServer: Developer side must expose public IP/domain<br/>Must handle platform handshake auth<br/>Backend calls /session/start directly with API Key — no sessionToken needed
-    Platform->>Avatar: Start avatar
-    Avatar->>RTC: Join room
-    Avatar->>Platform: Start complete
-    Platform->>AppServer: { sessionId, userToken, sfuUrl }
-    end
-
-    AppServer->>User: { userToken, sfuUrl }
-
-    %% 2. RTC link establishment
-    User->>RTC: Join room (userToken)
-    User-->>RTC: Publish text/audio stream
-
-    %% 3. Core business loop
-    Platform-->>RTC: Subscribe to user text/audio stream
-    Platform->>AppServer: Forward to developer backend via WebSocket
-
-    alt Text mode
-        AppServer-->>Avatar: Return reply text
-        Avatar->>Avatar: Internal TTS conversion
-    else Audio mode
-        AppServer-->>Avatar: Return reply audio stream
-    end
-
-    %% 4. Avatar feedback
-    Avatar->>RTC: Publish avatar audio/video stream
-    RTC-->>User: Subscribe and render
-```
-
-### Choosing Between the Two Modes
-
-- If your business demands **ultra-low latency and large-scale concurrency stability**, and you have a mature ops team capable of exposing a stable public endpoint, **Outbound** offers better architectural clarity and resource control.
-- If you prioritize **rapid delivery and internal network security**, and want to avoid complex firewall traversal, **Inbound** introduces only a negligible performance overhead that is nearly imperceptible under async Java frameworks such as Netty or WebFlux.
-
-> **sessionToken Architecture Rule**
+> **sessionToken**
 >
-> Both Inbound and Outbound modes follow the same auth pattern: the **developer backend** calls `/session/start` directly with an API Key and receives `userToken + sfuUrl` to distribute to the frontend. A `sessionToken` (obtained via `/auth/getAuthToken`) is **not required** in either mode.
+> `sessionToken` (obtained via `/auth/session/token`) is only used in fully managed mode, where the **frontend** calls `/session/start` directly and the backend acts as a token relay — keeping the API Key off the client while avoiding deep backend involvement.
 >
-> `sessionToken` is only used in lightweight managed modes (fully-managed, API Key-managed) where the **frontend** calls `/session/start` directly and the backend only acts as a token relay — keeping the API Key off the client while avoiding deep backend involvement.
+> In WebSocket Agent and RTC modes, the **developer backend** calls `/session/start` directly with an API Key and receives `userToken + sfuUrl` to distribute to the frontend. A `sessionToken` is **not required**.
 
 ---
 
@@ -181,7 +120,7 @@ sequenceDiagram
 
 #### Live Avatar Service → Developer Backend
 
-> The Live Avatar Service **always** sends `session.init` first, regardless of whether Inbound or Outbound mode is used. Developers do not need to handle any difference in direction between the two modes.
+> The Live Avatar Service **always** sends `session.init` first after the WebSocket connection is established.
 
 ```json
 {
