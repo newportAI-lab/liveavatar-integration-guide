@@ -2,19 +2,20 @@
 
 Developer documentation for integrating [Facemarket Live Avatar](https://facemarket.ai) into your application. Covers every supported integration mode from a 5-minute quick start to fully self-managed RTC deployments.
 
-## Contents
+## Documentation
 
-- [Live Avatar Integration Guide](./Live%20Avatar%20Integration%20Guide.md)
+- English: [Live Avatar Integration Guide](./Live%20Avatar%20Integration%20Guide.md)
+- 中文: [Live Avatar Integration Guide (中文版)](./Live%20Avatar%20Integration%20Guide.zh-CN.md)
 
 ## What's Inside
 
 | Chapter | Description |
 | --- | --- |
-| I. Quick Start | Up and running in 5 minutes with the default managed pipeline |
+| I. Quick Start | Up and running in 5 minutes with the fully managed pipeline |
 | II. Choosing an Advanced Mode | Decision table for picking the right integration mode |
 | III. Key Concepts | Credentials, sessions, rooms, participant roles, and abbreviations |
-| IV. API Key Hosting | Let the platform proxy your LLM — no inference infra required |
-| V. WebSocket Mode | Full control over conversation logic via WS Outbound or WS Inbound |
+| IV. Start a Session from Backend | Server-to-server session lifecycle API |
+| V. WebSocket Agent | Full control over conversation logic via WebSocket |
 | VI. WebRTC Mode | Custom voice agent with Platform RTC or BYO (self-managed) RTC |
 | VII. Frontend SDK | JS SDK reference for the `@sanseng/liveavatar-js-sdk` package |
 | VIII. Sandbox | 30 free minutes/month for end-to-end testing |
@@ -24,10 +25,8 @@ Developer documentation for integrating [Facemarket Live Avatar](https://facemar
 
 | Mode | Best For | Effort |
 | --- | --- | --- |
-| Default (managed) | Get started fast; platform handles ASR → LLM → TTS | Minimal |
-| API Key Hosting | Bring your own LLM without running inference infra | Low |
-| WS Outbound | Public backend, full control over conversation logic | Medium |
-| WS Inbound | Serverless / private network, full control | Low |
+| Fully Managed | Get started fast; platform handles ASR → LLM → TTS. Supports custom models with your own API Key | Minimal |
+| WebSocket Agent | Serverless / private network, full control over conversation logic | Low |
 | Platform RTC | Custom voice agent, ultra-low latency | High |
 | BYO RTC | Private deployment, fully self-managed RTC | Very High |
 
