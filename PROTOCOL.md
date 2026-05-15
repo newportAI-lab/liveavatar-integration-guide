@@ -385,68 +385,20 @@ This message is typically sent proactively by the system just before a timeout i
 ## Scenario 2: Real-time Voice Input
 
 > **Design Principle — ASR Ownership:**
-> Whoever provides ASR is responsible for producing ASR recognition results and VAD judgments — and for sending the corresponding events.
+> Whoever provides ASR is responsible for producing ASR recognition results and VAD judgments.
 >
-> - **Platform ASR** → Platform runs ASR + VAD and sends `input.asr.*` / `input.voice.*` **to** the Developer Service.
-> - **Developer ASR / Omni** → Platform forwards raw audio Binary Frames to the Developer Service; the developer runs ASR + VAD and sends `input.asr.*` / `input.voice.*` **back to** the platform (same events, reversed direction). This keeps the platform state machine in sync and enables conversation logging.
+> - **Platform ASR** → Platform runs ASR + VAD internally. The recognized text is sent to the agent WebSocket as `input.text` (same format as typed text in Scenario 1). `input.asr.*` / `input.voice.*` events are internal to the platform and are **not** forwarded to the agent WebSocket.
+> - **Developer ASR / Omni** → Platform forwards raw audio Binary Frames to the Developer Service; the developer runs ASR + VAD and sends `input.asr.*` / `input.voice.*` **to the platform** to keep its state machine in sync and enable conversation logging. `input.asr.*` / `input.voice.*` events are **only** used in this path.
 
 ---
 
 ### Scenario 2A: Platform ASR
 
-The following events are sent by the **Live Avatar Service (Platform) → Developer Service**.
+In this mode, the platform performs ASR and VAD internally. The recognized text is sent to the agent WebSocket as `input.text` — the same event used for typed text in Scenario 1. The developer processes it identically to a text message.
 
-#### ASR Recognition — Streaming Partial Result
+`input.asr.*` and `input.voice.*` events are internal to the platform and are **not** forwarded to the agent WebSocket. They exist only for the Developer ASR path (Scenario 2B), where the developer sends them to the platform.
 
-```json
-{
-  "event": "input.asr.partial",
-  "requestId": "req_2",
-  "seq": 3,
-  "data": {
-    "text": "What is your",
-    "final": false
-  }
-}
-```
-
----
-
-#### ASR Recognition — Final Result
-
-```json
-{
-  "event": "input.asr.final",
-  "requestId": "req_2",
-  "data": {
-    "text": "What is your name?"
-  }
-}
-```
-
----
-
-#### Voice Activity Detection — Speech Start
-
-```json
-{
-  "event": "input.voice.start",
-  "requestId": "req_1"
-}
-```
-
-#### Voice Activity Detection — Speech End
-
-```json
-{
-  "event": "input.voice.finish",
-  "requestId": "req_1"
-}
-```
-
-`input.asr.partial` is optional; sending only `input.asr.final` is acceptable.
-
-👉 The subsequent response workflow is identical to that of text input (Scenario 1).
+👉 The workflow is identical to Scenario 1 — the agent receives `input.text` and responds with standard response events.
 
 ---
 
@@ -460,7 +412,7 @@ Binary Frames are forwarded using the same binary format defined in the [Audio P
 
 > The raw audio Binary Frame format is identical to the `response.audio.*` Binary Frame format used for developer-managed TTS output — only the transmission direction is reversed.
 
-The developer runs VAD and ASR internally, then sends the **same `input.voice.*` and `input.asr.*` events back to the platform** (direction reversed compared to Scenario 2A):
+The developer runs VAD and ASR internally, then sends the **`input.voice.*` and `input.asr.*` events to the platform**:
 
 | Event | Direction | Purpose |
 |---|---|---|
