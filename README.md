@@ -1,3 +1,5 @@
+[English]() | [中文](./README.zh-CN.md)
+
 # Facemarket Live Avatar — Integration Guide
 
 Developer documentation for integrating [Facemarket Live Avatar](https://facemarket.ai) into your application. Covers every supported integration mode from a 5-minute quick start to fully self-managed RTC deployments.
