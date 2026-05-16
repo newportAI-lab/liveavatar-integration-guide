@@ -854,7 +854,8 @@ Platform RTC 模式下，每个 session 只有一个 `agent_{sessionId}` identit
 | Edge | 90+ | 支持 |
 | Firefox | 90+ | 支持 |
 | Chrome for Android | 90+ | 支持 |
-| Safari / Mobile Safari (iOS) | — | 计划在后续版本支持 |
+| Safari | 15+ | 支持 |
+| Mobile Safari (iOS) | 15+ | 支持 |
 
 需要 WebRTC。隐私/无痕模式下的浏览器可能对 WebRTC 支持有限——请先在正常模式下测试。
 

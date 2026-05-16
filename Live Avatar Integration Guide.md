@@ -855,7 +855,8 @@ Latency accumulates across the pipeline. Check each stage:
 | Edge | 90+ | Supported |
 | Firefox | 90+ | Supported |
 | Chrome for Android | 90+ | Supported |
-| Safari / Mobile Safari (iOS) | — | Planned for a future release |
+| Safari | 15+ | Supported |
+| Mobile Safari (iOS) | 15+ | Supported |
 
 WebRTC is required. Browsers in private/incognito mode may have limited WebRTC support — test in normal mode first.
 
