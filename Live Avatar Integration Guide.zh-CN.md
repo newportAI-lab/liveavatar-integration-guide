@@ -95,7 +95,7 @@ await client.connect(); // SDK internally calls /session/start and joins the RTC
 | 2 | **RTC Agent - 平台 RTC** | `rtcAgent` | 自研语音 Agent，追求极低延迟，使用平台 LiveKit | 高 |
 | 3 | **RTC Agent - BYO RTC** | `rtcAgent` + BYO 运行时参数 | 私有化部署，完全自备 RTC 基础设施 | 极高 |
 
-> `mode` 表示本次会话选择的接入模式。不传 `mode` 时使用 Avatar 默认模式。平台只允许启动已启用且资源就绪的 `mode`；不同 `mode` 的运行时参数由 `/session/start` 请求体补齐。
+> `mode` 表示本次会话选择的接入模式。不传 `mode` 时使用 Avatar 默认模式。平台根据 `mode` 执行对应初始化逻辑；不同 `mode` 的运行时参数由 `/session/start` 请求体补齐。
 
 ---
 
@@ -128,7 +128,7 @@ await client.connect(); // SDK internally calls /session/start and joins the RTC
 | 角色 | Identity 格式 | 说明 |
 | --- | --- | --- |
 | **user** | `user` | 终端用户，发布麦克风/摄像头，接收数字人画面。同一 Room 可有多个。 |
-| **coordinator** | `coordinator_{sessionId}` | 平台会话协调者，所有模式下必须加入房间。负责状态同步、控制信令和会话生命周期；在全托管 / WebSocket Agent 模式下也承载平台 ASR/TTS 桥接。 |
+| **coordinator** | `coordinator_{sessionId}` | 平台会话协调者，所有模式下必须加入房间。负责状态同步、控制信令和会话生命周期；在全托管模式下承载平台 ASR/TTS，在 WebSocket Agent 模式下承载音频转发、重采样与可选平台 TTS 桥接。 |
 | **agent** | `agent_{sessionId}` | 开发者 AI 实体，RTC Agent 模式下在房间内订阅用户媒体、运行推理、发布驱动音频。 |
 | **renderer** | `renderer_{sessionId}` | 平台渲染引擎，订阅驱动音频后生成唇形动画，发布 Video+Audio Track。**开发者无需关心。** |
 
@@ -167,7 +167,7 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
   }'
 ```
 
-> `mode` 可选。不传时使用 Avatar 默认模式；显式传入时只能选择该 Avatar 已启用且资源就绪的模式。常用取值：`managed`、`websocketAgent`、`rtcAgent`。
+> `mode` 可选。不传时使用 Avatar 默认模式；显式传入时平台按对应模式初始化会话。常用取值：`managed`、`websocketAgent`、`rtcAgent`。
 
 **请求（重连 — 复用已有 session）**
 
@@ -307,15 +307,16 @@ await client.connect();
 
 WebSocket Agent 模式下，**平台持有 WS Server，为每次会话动态分配一个 WS 端点（`agentWsUrl`），开发者后端主动连接平台**。开发者完全控制对话逻辑（LLM / Agent / 业务系统），平台负责 RTC 音视频和数字人渲染。无需公网服务器。
 
-WebSocket Agent 的 ASR / TTS 提供方在控制台配置：
+WebSocket Agent 模式下，ASR 始终由开发者提供。ASR 音频链路为：**前端采集音频 → LiveKit → 数字人平台按开发者配置的 ASR 采样率重采样 → WebSocket Binary Frame 发送给开发者**。开发者完成 ASR 后，应将识别结果通过 `input.asr.partial` / `input.asr.final` 回传给平台，用于字幕展示、状态同步和调试观测。TTS 提供方在控制台配置：
 
 | 配置项 | 可选值 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `asrProvider` | `developer` / `platform` | `developer` | `platform` 表示平台 ASR 转写后推送 `input.asr.*`；`developer` 表示平台转发原始音频 Binary Frame，开发者自行 ASR / Omni 处理 |
 | `ttsProvider` | `developer` / `platform` | `developer` | `platform` 表示开发者可返回文本，由平台 TTS 合成；`developer` 表示开发者必须返回 `response.audio.*` 已合成音频 |
-| `asrSampleRate` | 采样率 Hz | `16000` | 平台转发给开发者 ASR / Omni，或平台 ASR 前重采样的目标采样率 |
+| `asrSampleRate` | 采样率 Hz | `16000` | 开发者配置的 ASR 目标采样率；平台从 LiveKit 收到用户音频后，按该采样率重采样，再通过 WebSocket Binary Frame 发送给开发者 ASR / Omni |
 | `ttsSampleRate` | 采样率 Hz | `24000` | renderer 期望接收的驱动音频采样率 |
 
+> `asrSampleRate` 影响的是平台转发给开发者 ASR 前的重采样目标，而不是要求 JS SDK 直接采集出该采样率。JS SDK 负责采集并发布音频到 LiveKit；平台订阅用户音频后，再按开发者配置的 `asrSampleRate` 输出稳定格式的 WebSocket 音频流。
+>
 > 如果用户没有手动选择平台 TTS 并补齐 `ttsProviderId` / `voiceId` / `fallbackVoiceId` 等 TTS 配置，平台认为 TTS 由开发者提供。声道数和采样深度不是用户配置项：Binary Frame 固定 mono，PCM 路径固定 2 bytes sample depth。
 
 ```mermaid
@@ -327,7 +328,7 @@ sequenceDiagram
     participant Renderer as 平台渲染引擎 (renderer)
     participant SFU as 平台 SFU
 
-    Note over Backend, Platform: 配置阶段（一次性）：控制台启用 WebSocket Agent，选定 asrProvider / ttsProvider
+    Note over Backend, Platform: 配置阶段（一次性）：配置 WebSocket Agent 的 ttsProvider 与采样率
 
     Backend->>Platform: POST /session/start {avatarId, mode: "websocketAgent"}（API Key 鉴权）
     Platform->>Renderer: 启动渲染实例（携带 rendererToken）
@@ -345,16 +346,15 @@ sequenceDiagram
         Client->>SFU: 加入房间
     end
 
-    alt asrProvider=platform
+    alt 语音输入
         Client->>SFU: 发布麦克风音频
-        Platform->>Platform: ASR（转写文本）
-        Platform->>Backend: input.asr.partial（流式中间结果）
-        Platform->>Backend: input.asr.final（最终识别结果）
-    else asrProvider=developer（默认）
-        Client->>SFU: 发布麦克风音频
+        SFU->>Platform: 转发音频
+        Platform->>Platform: 按 asrSampleRate 重采样
         Platform->>Backend: input.voice.start
         Platform->>Backend: Binary Frame（原始 PCM/Opus 音频流）
         Platform->>Backend: input.voice.finish
+        Backend->>Backend: 开发者 ASR / Omni 处理
+        Backend-->>Platform: input.asr.partial / input.asr.final（用于字幕与状态同步）
     else 文本输入
         Client->>Platform: input.text（Data Channel）
         Platform->>Backend: input.text {text}
@@ -389,10 +389,8 @@ sequenceDiagram
 | --- | --- |
 | `session.init` | WS 连接建立后，平台**始终**主动发送 |
 | `input.text` | 用户通过 Data Channel 发送文本，平台转发 |
-| `input.asr.partial` | ASR 流式中间结果（`asrProvider=platform` 时，由平台发送） |
-| `input.asr.final` | ASR 最终识别结果（`asrProvider=platform` 时，由平台发送） |
-| `input.voice.start` | 原始音频流开始，同时表示用户语音活动开始边界；仅 `asrProvider=developer` 时发送 |
-| `input.voice.finish` | 原始音频流结束，同时表示用户语音活动结束边界；仅 `asrProvider=developer` 时发送 |
+| `input.voice.start` | 原始音频流开始，同时表示用户语音活动开始边界 |
+| `input.voice.finish` | 原始音频流结束，同时表示用户语音活动结束边界 |
 | `session.state` | 状态同步（IDLE / LISTENING / THINKING / SPEAKING 等） |
 | `system.idleTrigger` | 用户长时间无操作 |
 | `session.closing` | 连接即将关闭（如超时） |
@@ -402,6 +400,8 @@ sequenceDiagram
 | 事件 | 说明 |
 | --- | --- |
 | `session.ready` | 握手响应，收到 `session.init` 后**必须**回复 |
+| `input.asr.partial` | ASR 流式中间结果；开发者 ASR 回传，平台用于字幕展示与状态同步 |
+| `input.asr.final` | ASR 最终识别结果；开发者 ASR 回传，平台用于字幕展示与状态同步 |
 | `response.start` | 可选，配置本次回复的 TTS 参数（speed / volume / mood）；仅在 `ttsProvider=platform` 时有效 |
 | `response.chunk` | 流式文本回复分片；仅在 `ttsProvider=platform` 且已配置平台 TTS 时可用于驱动 Avatar |
 | `response.done` | 文本回复结束标志；仅在 `ttsProvider=platform` 且已配置平台 TTS 时可用于驱动 Avatar |
@@ -422,7 +422,7 @@ sequenceDiagram
 
 Binary Frame 同时用于两条路径，格式完全相同，仅方向相反：
 
-- `input.voice.*`（平台 → 开发者）：`asrProvider=developer` 时，平台按 `asrSampleRate` 输出 mono 音频，Header 采样率和声道数必须与实际 Payload 一致。
+- `input.voice.*`（平台 → 开发者）：WebSocket Agent 模式下，平台从 LiveKit 收到用户音频后，按 `asrSampleRate` 重采样并输出 mono 音频，Header 采样率和声道数必须与实际 Payload 一致。
 - `response.audio.*`（开发者 → 平台）：`ttsProvider=developer` 时，开发者返回音频必须匹配 `ttsSampleRate`，且必须是 mono。
 
 音频格式固定约定：声道数 `1`（mono）；PCM 路径 sample depth 固定 `2 bytes`；ASR 入方向默认 16kHz，TTS 出方向默认 24kHz，可通过 `asrSampleRate` / `ttsSampleRate` 覆盖。

@@ -96,7 +96,7 @@ If the fully managed mode does not meet your requirements, choose one of the fol
 | 3 | **RTC Agent - BYO RTC** | `rtcAgent` + BYO runtime parameters | Private deployment, fully self-managed RTC infrastructure | Very High |
 
 
-> `mode` selects the integration mode for the current session. If omitted, the Avatar's default mode is used. The platform only starts modes that are enabled and resource-ready for that Avatar; mode-specific runtime parameters are supplied in the `/session/start` request body.
+> `mode` selects the integration mode for the current session. If omitted, the Avatar's default mode is used. The platform initializes the session according to `mode`; mode-specific runtime parameters are supplied in the `/session/start` request body.
 
 ---
 
@@ -129,7 +129,7 @@ If the fully managed mode does not meet your requirements, choose one of the fol
 | Role | Identity Format | Description |
 | --- | --- | --- |
 | **user** | `user` | End user. Publishes microphone/camera; receives the avatar's video. Multiple users can share the same Room. |
-| **coordinator** | `coordinator_{sessionId}` | Platform session coordinator. Must join in all modes. Handles state sync, control signaling, and session lifecycle; in fully managed / WebSocket Agent modes it also bridges platform ASR/TTS. |
+| **coordinator** | `coordinator_{sessionId}` | Platform session coordinator. Must join in all modes. Handles state sync, control signaling, and session lifecycle; in fully managed mode it runs platform ASR/TTS, while in WebSocket Agent mode it handles audio forwarding, resampling, and optional platform TTS bridging. |
 | **agent** | `agent_{sessionId}` | Developer's AI entity. In RTC Agent mode, subscribes to user media in the room, runs inference, and publishes the driving audio track. |
 | **renderer** | `renderer_{sessionId}` | Platform rendering engine. Subscribes to the driving audio and generates lip-sync video, then publishes the Video + Audio Track. **Developers do not need to manage this.** |
 
@@ -181,7 +181,7 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
   }'
 ```
 
-> `mode` is optional. If omitted, the Avatar default mode is used. When explicitly provided, it must be one of the modes enabled and resource-ready for this Avatar. Common values: `managed`, `websocketAgent`, `rtcAgent`.
+> `mode` is optional. If omitted, the Avatar default mode is used. When explicitly provided, the platform initializes the session using that mode. Common values: `managed`, `websocketAgent`, `rtcAgent`.
 >
 > **`sessionId` parameter**: omit to create a new Session + Room; include to reuse an existing Session (reconnect). The platform validates that the session is `active`, then refreshes all credentials and returns them. If the session has been `closed`, the API returns 403.
 
@@ -309,15 +309,16 @@ await client.connect();
 
 In WebSocket Agent mode, the **platform owns the WS Server and dynamically allocates a WS endpoint (`agentWsUrl`) for each session. The developer backend actively connects to the platform**. Developers fully control conversation logic (LLM / Agent / business systems) while the platform handles RTC audio/video and avatar rendering. No public-facing server required.
 
-WebSocket Agent ASR / TTS ownership is configured in the console:
+In WebSocket Agent mode, ASR is always provided by the developer. The ASR audio path is: **frontend captures audio -> LiveKit -> the platform resamples according to the developer-configured ASR sample rate -> WebSocket Binary Frames are sent to the developer**. After running ASR, the developer should send `input.asr.partial` / `input.asr.final` back to the platform for subtitles, state sync, and debugging observability. TTS ownership is configured in the console:
 
 | Field | Values | Default | Meaning |
 | --- | --- | --- | --- |
-| `asrProvider` | `developer` / `platform` | `developer` | `platform` means the platform runs ASR and pushes `input.asr.*`; `developer` means the platform forwards raw Binary Frames and the developer runs ASR / Omni |
 | `ttsProvider` | `developer` / `platform` | `developer` | `platform` means the developer may return text and platform TTS synthesizes speech; `developer` means the developer must return synthesized audio via `response.audio.*` |
-| `asrSampleRate` | Hz | `16000` | Target sample rate for audio forwarded to developer ASR / Omni, or before platform ASR |
+| `asrSampleRate` | Hz | `16000` | Developer-configured target sample rate for ASR input. After receiving user audio from LiveKit, the platform resamples to this rate before sending WebSocket Binary Frames to the developer ASR / Omni pipeline |
 | `ttsSampleRate` | Hz | `24000` | Expected driving audio sample rate for renderer |
 
+> `asrSampleRate` affects the resampling target before the platform forwards audio to developer ASR. It does not require the JS SDK to capture audio at that exact sample rate. The JS SDK captures and publishes audio to LiveKit; the platform subscribes to user audio, then outputs a stable WebSocket audio stream according to the developer-configured `asrSampleRate`.
+>
 > If platform TTS is not manually selected and configured with `ttsProviderId` / `voiceId` / `fallbackVoiceId`, the platform treats TTS as developer-provided. Channel count and sample depth are not user-configurable: Binary Frames are mono, and PCM sample depth is fixed at 2 bytes.
 
 ```mermaid
@@ -329,7 +330,7 @@ sequenceDiagram
     participant Renderer as Platform Renderer (renderer)
     participant SFU as Platform SFU
 
-    Note over Backend, Platform: Config phase (one-time): enable WebSocket Agent in console, select asrProvider / ttsProvider
+    Note over Backend, Platform: Config phase (one-time): configure WebSocket Agent ttsProvider and sample rates
 
     Backend->>Platform: POST /session/start {avatarId, mode: "websocketAgent"} (API Key auth)
     Platform->>Renderer: Launch renderer instance (with rendererToken)
@@ -347,14 +348,15 @@ sequenceDiagram
         Client->>SFU: Join room
     end
 
-    alt asrProvider=platform
+    alt Voice input
         Client->>SFU: Publish microphone audio
-        Platform->>Platform: ASR (transcribe)
-        Platform->>Backend: input.asr.partial (streaming intermediate result)
-        Platform->>Backend: input.asr.final (final recognition result)
-    else asrProvider=developer (default)
-        Client->>SFU: Publish microphone audio
+        SFU->>Platform: Forward audio
+        Platform->>Platform: Resample according to asrSampleRate
+        Platform->>Backend: input.voice.start
         Platform->>Backend: Binary Frame (raw PCM/Opus audio stream)
+        Platform->>Backend: input.voice.finish
+        Backend->>Backend: Developer ASR / Omni processing
+        Backend-->>Platform: input.asr.partial / input.asr.final (subtitles and state sync)
     else Text input
         Client->>Platform: input.text (Data Channel)
         Platform->>Backend: input.text {text}
@@ -389,10 +391,8 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | --- | --- |
 | `session.init` | Sent by the platform **immediately** after the WS connection is established |
 | `input.text` | User sent text via Data Channel; platform forwards it |
-| `input.asr.partial` | Streaming intermediate ASR result (`asrProvider=platform`) |
-| `input.asr.final` | Final ASR recognition result (`asrProvider=platform`) |
-| `input.voice.start` | User speech start boundary; sent only when `asrProvider=developer` |
-| `input.voice.finish` | User speech end boundary; sent only when `asrProvider=developer` |
+| `input.voice.start` | Raw audio stream starts; also marks the user speech start boundary |
+| `input.voice.finish` | Raw audio stream ends; also marks the user speech end boundary |
 | `session.state` | State sync (IDLE / LISTENING / THINKING / SPEAKING, etc.) |
 | `system.idleTrigger` | User has been inactive for an extended period |
 | `session.closing` | Connection is about to close (e.g. timeout) |
@@ -402,6 +402,8 @@ All text messages use three-segment event naming: `<domain>.<action>[.<stage>]`
 | Event | Description |
 | --- | --- |
 | `session.ready` | Handshake response — **must** be sent after receiving `session.init` |
+| `input.asr.partial` | Streaming intermediate ASR result sent back by developer ASR; used by the platform for subtitles and state sync |
+| `input.asr.final` | Final ASR result sent back by developer ASR; used by the platform for subtitles and state sync |
 | `response.start` | Optional. Configure TTS parameters for this reply (speed / volume / mood). Only effective when `ttsProvider=platform` |
 | `response.chunk` | Streaming text reply fragment; drives the Avatar only when `ttsProvider=platform` and platform TTS is configured |
 | `response.done` | End-of-text signal; drives the Avatar only when `ttsProvider=platform` and platform TTS is configured |
@@ -422,7 +424,7 @@ Audio data is transmitted as **WebSocket binary frames** — no base64 encoding.
 
 Binary Frames are used for two paths with the same format, only the direction differs:
 
-- User audio input: when `asrProvider=developer`, the platform sends raw mono audio Binary Frames to the developer according to `asrSampleRate`.
+- User audio input: in WebSocket Agent mode, after receiving user audio from LiveKit, the platform resamples according to `asrSampleRate` and sends mono Binary Frames to the developer.
 - Developer audio output: when `ttsProvider=developer`, the developer sends synthesized mono audio Binary Frames that match `ttsSampleRate`.
 
 Fixed audio format: channel count `1` (mono); PCM sample depth `2 bytes`; ASR input defaults to 16kHz and TTS output defaults to 24kHz, overrideable via `asrSampleRate` / `ttsSampleRate`.

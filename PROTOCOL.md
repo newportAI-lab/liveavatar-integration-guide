@@ -4,7 +4,7 @@
 
 This protocol defines the WebSocket communication between the Live Avatar platform (coordinator) and developer services (agent), covering text, audio, and image content.
 
-> This document applies to `mode: "websocketAgent"`. The avatar configuration determines whether ASR/TTS is provided by the platform or by the developer, and `/session/start` may omit `mode` if WebSocket Agent is the Avatar default mode.
+> This document applies to `mode: "websocketAgent"`. ASR is provided by the developer in WebSocket Agent mode. Platform TTS is optional depending on Avatar configuration, and `/session/start` may omit `mode` if WebSocket Agent is the Avatar default mode.
 
 ## Design Goals
 
@@ -125,12 +125,11 @@ The following options are configured on the Avatar.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `asrProvider` | `developer` | `developer` means the platform forwards user audio as Binary Frames; `platform` means the platform uses platform ASR and forwards `input.asr.*` plus ASR-derived `input.voice.*` events. |
 | `ttsProvider` | `developer` | `developer` means the developer returns `response.audio.*` and audio Binary Frames; `platform` means the developer may return text via `response.chunk` / `response.done`, and the platform TTS drives the Avatar. |
-| `asrSampleRate` | `16000` | Sample rate of user audio forwarded to developer ASR, in Hz. |
+| `asrSampleRate` | `16000` | Developer-configured target sample rate for ASR input. After receiving user audio from LiveKit, the platform resamples to this rate before sending WebSocket Binary Frames to the developer ASR / Omni pipeline. |
 | `ttsSampleRate` | `24000` | Sample rate expected for developer-returned TTS audio, in Hz. |
 
-Audio is always mono PCM/Opus at the protocol level. Channel count and sample depth are not user-configurable; PCM sample depth is 2 bytes.
+Audio is always mono PCM/Opus at the protocol level. Channel count and sample depth are not user-configurable; PCM sample depth is 2 bytes. The frontend publishes audio to LiveKit; the platform subscribes to that audio, resamples according to `asrSampleRate`, and forwards a stable WebSocket audio stream to the developer.
 
 `ttsProvider=platform` is valid only when the Avatar has platform TTS information configured, such as `ttsProviderId`, `voiceId`, or a fallback voice. If TTS is not explicitly configured, the platform treats TTS as developer-provided and requires the developer to return `response.audio.*`.
 
@@ -337,20 +336,10 @@ Providing `requestId` helps ensure that a specific, designated conversation is i
 
 The following sequence diagram illustrates the interrupt execution flow.
 
-> **Interrupt Ownership Rule — tied to ASR ownership:**
-> The party that provides ASR is the only one authorized to issue `control.interrupt`.
+> **Interrupt Ownership Rule:**
+> In WebSocket Agent mode, the developer owns ASR and speech-boundary detection. Only the developer service should issue explicit `control.interrupt` for programmatic interruption.
 >
-> | ASR Mode | Who may send `control.interrupt` | Platform auto-interrupt |
-> |---|---|---|
-> | `asrProvider=platform` (Scenario 2A) | Developer **and** Platform | Allowed — platform may auto-interrupt based on ASR built-in voice activity detection |
-> | `asrProvider=developer` / Omni (Scenario 2B) | Developer **only** | **Forbidden** — platform MUST NOT send `control.interrupt` |
->
-> **Rationale:** In Scenario 2B the developer owns speech boundary detection, so only the developer knows when speech boundaries occur. A platform-initiated interrupt in this mode would break the developer's ASR pipeline.
->
-> **Note:** In both ASR modes, the platform automatically clears the RTC playback buffer when it processes a voice-start boundary; no `control.interrupt` is needed in either case:
->
-> - **`asrProvider=platform`** — The platform receives speech boundaries from ASR, sends `input.voice.start` to the developer, and clears the buffer itself at that point.
-> - **`asrProvider=developer` / Omni** — The developer detects speech boundaries internally and sends `input.voice.start` to the platform; the platform clears the buffer on receipt.
+> The platform automatically clears the RTC playback buffer when it receives a new user input boundary such as `input.text` or developer-sent `input.voice.start`; no explicit `control.interrupt` is needed for normal user barge-in.
 
 ```mermaid
 sequenceDiagram
@@ -372,8 +361,8 @@ sequenceDiagram
     Task-->>Avatar: 4. Push new reply text/audio
     Avatar-->>User: 5. Render new reply
 
-    Note over User, Avatar: Case 2: Avatar is speaking, user starts speaking (asrProvider=developer / Omni path)
-    Avatar->>AppServer: 6. Binary Frames (continuous raw audio forwarded by platform)
+    Note over User, Avatar: Case 2: Avatar is speaking, user starts speaking (developer ASR / Omni path)
+    Avatar->>AppServer: 6. Binary Frames (audio resampled by platform according to asrSampleRate)
 
     AppServer->>AppServer: 7. asrService.detectVoiceActivity (speech boundary detected internally)
 
@@ -407,83 +396,25 @@ This message is typically sent proactively by the system just before a timeout i
 
 ## Scenario 2: Real-time Voice Input
 
-> **Design Principle — ASR Ownership:**
-> Whoever provides ASR is responsible for producing ASR recognition results and speech boundary judgments — and for sending the corresponding events.
->
-> - **`asrProvider=platform`** → Platform receives speech boundaries from ASR and sends `input.asr.*` / `input.voice.*` **to** the Developer Service.
-> - **`asrProvider=developer` / Omni** → Platform forwards raw audio Binary Frames to the Developer Service; the developer runs ASR / Omni and sends `input.asr.*` / `input.voice.*` **back to** the platform (same events, reversed direction). This keeps the platform state machine in sync and enables conversation logging.
+> **Design Principle — Developer ASR Ownership:**
+> In WebSocket Agent mode, ASR is always provided by the developer. The platform receives user audio from LiveKit, resamples it according to the developer-configured `asrSampleRate`, and forwards it to the developer as WebSocket Binary Frames. The developer runs ASR / Omni processing and sends `input.voice.*` and `input.asr.*` events back to the platform so subtitles, state sync, and conversation logs remain available.
 
----
+### Voice Input Audio Path
 
-### Scenario 2A: `asrProvider=platform`
+1. Frontend captures microphone audio and publishes it to LiveKit.
+2. The platform subscribes to the user audio track from LiveKit.
+3. The platform resamples the audio according to `asrSampleRate`.
+4. The platform forwards the audio to the developer service via WebSocket Binary Frames.
+5. The developer detects speech boundaries and runs ASR / Omni processing.
+6. The developer sends `input.voice.*` and `input.asr.*` events back to the platform.
 
-The following events are sent by the **Live Avatar Service (Platform) → Developer Service**.
-
-#### ASR Recognition — Streaming Partial Result
-
-```json
-{
-  "event": "input.asr.partial",
-  "requestId": "req_2",
-  "seq": 3,
-  "data": {
-    "text": "What is your",
-    "final": false
-  }
-}
-```
-
----
-
-#### ASR Recognition — Final Result
-
-```json
-{
-  "event": "input.asr.final",
-  "requestId": "req_2",
-  "data": {
-    "text": "What is your name?"
-  }
-}
-```
-
----
-
-#### Speech Boundary — Speech Start
-
-```json
-{
-  "event": "input.voice.start",
-  "requestId": "req_1"
-}
-```
-
-#### Speech Boundary — Speech End
-
-```json
-{
-  "event": "input.voice.finish",
-  "requestId": "req_1"
-}
-```
-
-`input.asr.partial` is optional; sending only `input.asr.final` is acceptable.
-
-The subsequent response workflow is identical to Scenario 1: return text only when `ttsProvider=platform`; otherwise return audio.
-
----
-
-### Scenario 2B: `asrProvider=developer` / Omni
-
-When the avatar is configured for developer-provided ASR (including Omni multimodal models), the **Live Avatar Service (Platform) → Developer Service** continuously forwards the user's audio as a raw Binary Frame stream throughout the session. There are no start/finish signaling events — the platform performs no independent VAD and imposes no segmentation.
-
-#### Continuous Raw Audio Stream
+#### Platform → Developer: Resampled Audio Stream
 
 Binary Frames are forwarded using the same binary format defined in the [Audio Protocol](#audio-protocol-design-websocket-channel-only) section.
 
 > The raw audio Binary Frame format is identical to the `response.audio.*` Binary Frame format used for developer-managed TTS output — only the transmission direction is reversed.
 
-The developer detects speech boundaries and runs ASR internally, then sends the **same `input.voice.*` and `input.asr.*` events back to the platform** (direction reversed compared to Scenario 2A):
+#### Developer → Platform: Speech Boundaries and ASR Results
 
 | Event                | Direction                | Purpose                                                              |
 | -------------------- | ------------------------ | -------------------------------------------------------------------- |
@@ -492,7 +423,7 @@ The developer detects speech boundaries and runs ASR internally, then sends the 
 | `input.voice.finish` | **Developer → Platform** | Notify platform that user stopped speaking                           |
 | `input.asr.final`    | **Developer → Platform** | Send final recognition result; platform advances state machine       |
 
-After sending `input.asr.final`, the developer processes the recognized text and responds using the standard response workflow (Scenario 1, Section 4).
+`input.asr.partial` is optional; sending only `input.asr.final` is acceptable. After sending `input.asr.final`, the developer processes the recognized text and responds using the standard response workflow (Scenario 1, Section 4).
 
 ---
 
