@@ -113,7 +113,6 @@ If the fully managed mode does not meet your requirements, choose one of the fol
 | **User token** | The credential for an end user to join the RTC room. Issued by the platform (or by the developer in BYO RTC mode), embedding room name and user identity. |
 | **Agent token** | The credential for the developer's agent to join the RTC room (RTC Agent mode only). |
 | **Renderer token** | The credential for the renderer to join the developer's LiveKit room (BYO RTC mode only; issued by the developer and passed to the platform). |
-| **Coordinator token** | The credential for the coordinator to join the developer's LiveKit room (BYO RTC mode only; issued by the developer and passed to the platform). |
 | **Agent WS URL** | In WebSocket Agent mode, the dynamically allocated WebSocket endpoint for this session. It embeds a one-time token bound to the current `sessionId`. For **backend use only** — do not forward to the frontend. |
 
 ## Sessions & Rooms
@@ -129,9 +128,8 @@ If the fully managed mode does not meet your requirements, choose one of the fol
 | Role | Identity Format | Description |
 | --- | --- | --- |
 | **user** | `user` | End user. Publishes microphone/camera; receives the avatar's video. Multiple users can share the same Room. |
-| **coordinator** | `coordinator_{sessionId}` | Platform session coordinator. Must join in all modes. Handles state sync, control signaling, and session lifecycle; in fully managed mode it runs platform ASR/TTS, while in WebSocket Agent mode it handles audio forwarding, resampling, and optional platform TTS bridging. |
 | **agent** | `agent_{sessionId}` | Developer's AI entity. In RTC Agent mode, subscribes to user media in the room, runs inference, and publishes the driving audio track. |
-| **renderer** | `renderer_{sessionId}` | Platform rendering engine. Subscribes to the driving audio and generates lip-sync video, then publishes the Video + Audio Track. **Developers do not need to manage this.** |
+| **renderer** | `renderer_{sessionId}` | Platform rendering engine. Subscribes to the driving audio and generates lip-sync video, then publishes the Video + Audio Track. Also handles state sync, control signaling, and session lifecycle coordination. **Developers do not need to manage this.** |
 
 ## Technical Abbreviations
 
@@ -197,12 +195,11 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
     "sessionId": "sess_xxx",
     "agentIdentity": "string",
     "sfuUrl": "string",
-    "coordinatorToken": "string",
     "rendererToken": "string"
   }'
 ```
 
-> In BYO RTC mode, `sessionId` is also optional: omit to create a new session, include to reuse an existing one. On reconnect, the developer must re-issue `rendererToken` and `coordinatorToken`.
+> In BYO RTC mode, `sessionId` is also optional: omit to create a new session, include to reuse an existing one. On reconnect, the developer must re-issue `rendererToken`.
 
 ### Request Parameters
 
@@ -212,10 +209,9 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
 | `voiceId` | String | ❌ | Override the avatar's default voice for this session |
 | `mode` | String | ❌ | Integration mode for this session. If omitted, uses the Avatar default mode. Values: `managed` / `websocketAgent` / `rtcAgent` |
 | `sessionId` | String | ❌ | Include to reuse an existing session (reconnect); omit to create a new session |
-| `sfuUrl` | String | ✅ BYO RTC | Developer LiveKit SFU URL; must be provided together with `agentIdentity` / `coordinatorToken` / `rendererToken` |
+| `sfuUrl` | String | ✅ BYO RTC | Developer LiveKit SFU URL; must be provided together with `agentIdentity` / `rendererToken` |
 | `agentIdentity` | String | ✅ BYO RTC | Identity used by the developer agent in the LiveKit room; the platform renderer subscribes to this identity's Audio Track |
-| `coordinatorToken` | String | ✅ BYO RTC | Token for coordinator to join the room; must be provided together with `sfuUrl` / `agentIdentity` / `rendererToken` |
-| `rendererToken` | String | ✅ BYO RTC | Token for renderer to join the room; must be provided together with `sfuUrl` / `agentIdentity` / `coordinatorToken` |
+| `rendererToken` | String | ✅ BYO RTC | Token for renderer to join the room; must be provided together with `sfuUrl` / `agentIdentity` |
 
 Success Response (200 OK):
 
@@ -250,7 +246,7 @@ Standard Implementation Flow:
 1. Backend service calls `POST /session/start`.
    - **New session**: pass `avatarId`; optionally pass `mode`.
    - **Reconnect**: pass `avatarId` + `sessionId`; optionally pass `mode`.
-   - **BYO RTC**: pass `mode=rtcAgent` + `sfuUrl` + `agentIdentity` + `rendererToken` + `coordinatorToken`.
+   - **BYO RTC**: pass `mode=rtcAgent` + `sfuUrl` + `agentIdentity` + `rendererToken`.
 2. Platform service validates resources and initializes the streaming pipeline. On reconnect, the existing session and room are reused.
 3. Backend service receives the payload; it must store the `sessionId` for tracking and future reconnects, and deliver the `userToken` + `sfuUrl` to the frontend client. On reconnect, old credentials are replaced with the new ones from the response.
 
@@ -335,7 +331,6 @@ sequenceDiagram
     Backend->>Platform: POST /session/start {avatarId, mode: "websocketAgent"} (API Key auth)
     Platform->>Renderer: Launch renderer instance (with rendererToken)
     Renderer->>SFU: Join room (identity: renderer_{sessionId})
-    Platform->>SFU: Join room (identity: coordinator_{sessionId})
     Platform-->>Backend: {sessionId, agentWsUrl, userToken, sfuUrl}
     Note right of Backend: agentWsUrl embeds a one-time agentToken<br/>bound to this sessionId — do not forward to client
 
@@ -456,7 +451,7 @@ The two sub-modes differ in **which party owns the LiveKit SFU**:
 |  | Platform RTC | BYO RTC |
 | --- | --- | --- |
 | LiveKit owner | Platform | Developer |
-| Token issuer | Platform issues `userToken` / `agentToken` | Developer issues `userToken` / `agentToken` / `rendererToken` / `coordinatorToken` |
+| Token issuer | Platform issues `userToken` / `agentToken` | Developer issues `userToken` / `agentToken` / `rendererToken` |
 | Developer responsibility | Implement Agent Pipeline (ASR / LLM / TTS or Omni / Voice Agent) | Implement Agent Pipeline + operate LiveKit infrastructure |
 | Best for | Custom voice agent, fast integration | Private deployment, fully self-managed RTC |
 
@@ -464,7 +459,7 @@ The two sub-modes differ in **which party owns the LiveKit SFU**:
 
 ## 6.1 RTC Agent - Platform RTC (Platform-owned LiveKit)
 
-The platform owns the LiveKit SFU. The room contains four logical participant roles: end user, platform coordinator, platform renderer, and developer agent. The developer implements the agent and joins the room with the identity `agent_{sessionId}`. The **platform automatically subscribes to the Audio Track under that identity to drive the avatar's lip sync** — no additional configuration required.
+The platform owns the LiveKit SFU. The room contains three logical participant roles: end user, platform renderer, and developer agent. The developer implements the agent and joins the room with the identity `agent_{sessionId}`. The **platform automatically subscribes to the Audio Track under that identity to drive the avatar's lip sync** — no additional configuration required.
 
 ```mermaid
 sequenceDiagram
@@ -475,13 +470,10 @@ sequenceDiagram
     participant Platform as Facemarket Live Avatar Platform
     participant LiveKit as Platform LiveKit (SFU)
     participant Renderer as Platform Renderer (renderer)
-    participant Coordinator as Platform Coordinator
 
     Backend->>Platform: POST /session/start {avatarId, mode: "rtcAgent"} (API Key auth)
     Platform->>Renderer: Launch renderer instance (with rendererToken)
     Renderer->>LiveKit: Join room (identity: renderer_{sessionId})
-    Platform->>Coordinator: Launch session coordinator (with coordinatorToken)
-    Coordinator->>LiveKit: Join room (identity: coordinator_{sessionId})
     Platform-->>Backend: {sessionId, userToken, agentToken, sfuUrl}
 
     par End user joins
@@ -506,7 +498,6 @@ sequenceDiagram
 | Role | Identity Format | LiveKit Permissions |
 | --- | --- | --- |
 | End User | `user_{userId}` | Subscribe Video/Audio; Publish Audio |
-| coordinator | `coordinator_{sessionId}` | Subscribe Audio/Data; Publish Data |
 | agent | `agent_{sessionId}` | Subscribe Audio; Publish Audio, Data |
 | renderer | `renderer_{sessionId}` | Subscribe Audio/Data; Publish Video/Audio (managed internally by platform) |
 
@@ -524,9 +515,7 @@ We provide a Python SDK for RTC Agent - Platform RTC mode that handles LiveKit r
 
 ## 6.2 RTC Agent - BYO RTC (Developer-owned LiveKit)
 
-The platform shifts from "fully managed service provider" to a **"live avatar rendering plugin"**. All media streams flow entirely within the developer's SFU; the platform renderer and coordinator join the developer's LiveKit room as platform visitors. Token issuance authority belongs entirely to the developer.
-
-BYO RTC is also described as separate logical coordinator / renderer roles. The implementation may merge these in the future, but public tokens, permissions, and protocol semantics remain separate.
+The platform shifts from "fully managed service provider" to a **"live avatar rendering plugin"**. All media streams flow entirely within the developer's SFU; the platform renderer joins the developer's LiveKit room as a platform visitor. Token issuance authority belongs entirely to the developer.
 
 ```mermaid
 sequenceDiagram
@@ -537,16 +526,13 @@ sequenceDiagram
     participant Platform as Facemarket Live Avatar Platform (API)
     participant DevLiveKit as Developer LiveKit
     participant Renderer as Platform Renderer (renderer)
-    participant Coordinator as Platform Coordinator
 
     Backend->>Backend: Create LiveKit room and issue tokens
-    Note right of Backend: userToken (Sub Video/Audio, Pub Audio)<br/>agentToken (Sub Audio, Pub Audio/Data, identity=agentIdentity)<br/>rendererToken (Sub Audio/Data, Pub Video/Audio)<br/>coordinatorToken (Sub Audio/Data, canPublish: false)
+    Note right of Backend: userToken (Sub Video/Audio, Pub Audio)<br/>agentToken (Sub Audio, Pub Audio/Data, identity=agentIdentity)<br/>rendererToken (Sub Audio/Data, Pub Video/Audio)
 
-    Backend->>Platform: POST /session/start {avatarId, mode: "rtcAgent", sfuUrl, agentIdentity, rendererToken, coordinatorToken}
+    Backend->>Platform: POST /session/start {avatarId, mode: "rtcAgent", sfuUrl, agentIdentity, rendererToken}
     Platform->>Renderer: Schedule renderer instance (with sfuUrl + rendererToken)
     Renderer->>DevLiveKit: Join room (identity from rendererToken)
-    Platform->>Coordinator: Launch session coordinator (with sfuUrl + coordinatorToken)
-    Coordinator->>DevLiveKit: Join room (identity from coordinatorToken)
     Platform-->>Backend: {sessionId}
 
     par End user joins
@@ -573,13 +559,12 @@ sequenceDiagram
 | End User | developer-defined user identity | Developer backend | Internal network is sufficient |
 | agent | `agentIdentity` | Developer backend | Internal network is sufficient |
 | renderer | identity embedded in `rendererToken` | Developer backend | Developer LiveKit must be publicly reachable |
-| coordinator | identity embedded in `coordinatorToken` | Developer backend | Developer LiveKit must be publicly reachable |
 
-> **Security note**: `rendererToken` should be set to least-privilege (Sub Audio/Data + Pub Video/Audio only); `coordinatorToken` should be set to `canPublish: false, canPublishData: true`. Both should have a validity of no more than 1 hour and are passed once via `/session/start` — **the platform does not retain them**.
+> **Security note**: `rendererToken` should be set to least-privilege (Sub Audio/Data + Pub Video/Audio only). It should have a validity of no more than 1 hour and is passed once via `/session/start` — **the platform does not retain it**.
 >
 > **agentIdentity constraint**: In BYO RTC, the agent identity is determined when the developer issues the agent token. The platform cannot infer it, so it must be explicitly provided via `/session/start.agentIdentity`. The platform renderer subscribes to the Audio Track published by that identity.
 >
-> **Constraint**: In BYO RTC, renderer / coordinator identities are determined by developer-issued tokens. To host multiple avatar instances in the same Room, ensure `rendererToken` / `coordinatorToken` / `agentIdentity` are isolated from each other. For standard multi-avatar support, use RTC Agent - Platform RTC.
+> **Constraint**: In BYO RTC, renderer identity is determined by developer-issued tokens. To host multiple avatar instances in the same Room, ensure `rendererToken` / `agentIdentity` are isolated from each other. For standard multi-avatar support, use RTC Agent - Platform RTC.
 
 **Best for**: Enterprise private deployment, existing complete RTC infrastructure, extreme low-latency requirements.
 

@@ -2,7 +2,7 @@
 
 **English** | [中文](./PROTOCOL.zh.md)
 
-This protocol defines the WebSocket communication between the Live Avatar platform (coordinator) and developer services (agent), covering text, audio, and image content.
+This protocol defines the WebSocket communication between the Live Avatar platform and developer services (agent), covering text, audio, and image content.
 
 > This document applies to `mode: "websocketAgent"`. ASR is provided by the developer in WebSocket Agent mode. Platform TTS is optional depending on Avatar configuration, and `/session/start` may omit `mode` if WebSocket Agent is the Avatar default mode.
 
@@ -87,7 +87,6 @@ sequenceDiagram
     AppServer->>Platform: /session/start { avatarId, mode: "websocketAgent" } (API Key)
     Platform->>Avatar: Start avatar
     Avatar->>RTC: Join room (identity: renderer_{sessionId})
-    Platform->>RTC: Join room (identity: coordinator_{sessionId})
     Avatar->>Platform: Start complete
     Platform->>AppServer: { sessionId, userToken, agentWsUrl, sfuUrl }
     AppServer-->>Platform: Establish WebSocket connection via agentWsUrl
@@ -167,7 +166,7 @@ Audio is always mono PCM/Opus at the protocol level. Channel count and sample de
 
 #### Live Avatar Service → Developer Backend (scene.ready forwarded)
 
-After the user's frontend joins the LiveKit room and the avatar scene renders, the user sends `scene.ready` via Data Channel. The coordinator bridges this to the agent via WebSocket so the agent knows it can begin the conversation.
+After the user's frontend joins the LiveKit room and the avatar scene renders, the user sends `scene.ready` via Data Channel. The platform bridges this to the agent via WebSocket so the agent knows it can begin the conversation.
 
 ```json
 {

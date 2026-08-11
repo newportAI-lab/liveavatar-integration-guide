@@ -112,7 +112,6 @@ await client.connect(); // SDK internally calls /session/start and joins the RTC
 | **User token** | 前端用户加入 RTC 房间的凭证，由平台签发（BYO RTC 模式下由开发者签发），内嵌房间名和用户身份。 |
 | **Agent token** | 开发者 agent 加入 RTC 房间的凭证（仅 RTC Agent 模式）。 |
 | **Renderer token** | renderer 加入开发者 LiveKit 房间的凭证（仅 BYO RTC 模式，由开发者签发给平台）。 |
-| **Coordinator token** | coordinator 加入开发者 LiveKit 房间的凭证（仅 BYO RTC 模式，由开发者签发给平台）。 |
 | **Agent WS URL** | WebSocket Agent 模式下平台动态分配的 WebSocket 地址，内嵌一次性 token，仅供开发者**后端**连接，不可下发前端。 |
 
 ## 会话与房间
@@ -128,9 +127,8 @@ await client.connect(); // SDK internally calls /session/start and joins the RTC
 | 角色 | Identity 格式 | 说明 |
 | --- | --- | --- |
 | **user** | `user` | 终端用户，发布麦克风/摄像头，接收数字人画面。同一 Room 可有多个。 |
-| **coordinator** | `coordinator_{sessionId}` | 平台会话协调者，所有模式下必须加入房间。负责状态同步、控制信令和会话生命周期；在全托管模式下承载平台 ASR/TTS，在 WebSocket Agent 模式下承载音频转发、重采样与可选平台 TTS 桥接。 |
 | **agent** | `agent_{sessionId}` | 开发者 AI 实体，RTC Agent 模式下在房间内订阅用户媒体、运行推理、发布驱动音频。 |
-| **renderer** | `renderer_{sessionId}` | 平台渲染引擎，订阅驱动音频后生成唇形动画，发布 Video+Audio Track。**开发者无需关心。** |
+| **renderer** | `renderer_{sessionId}` | 平台渲染引擎，订阅驱动音频后生成唇形动画，发布 Video+Audio Track。同时承载状态同步、控制信令和会话生命周期协调。**开发者无需关心。** |
 
 ## 技术缩写
 
@@ -196,12 +194,11 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
     "sessionId": "sess_xxx",
     "sfuUrl": "string",
     "agentIdentity": "string",
-    "coordinatorToken": "string",
     "rendererToken": "string"
   }'
 ```
 
-> RTC Agent 的部署形态由运行时参数决定：不传 `sfuUrl` / `rendererToken` / `coordinatorToken` / `agentIdentity` 时走平台 RTC；四者全部传入时走 BYO RTC；只传其中一部分视为非法请求。BYO RTC 模式下 `sessionId` 同样可选：不传创建新会话，传入则复用已有会话（重连时开发者需重新签发 `rendererToken` 和 `coordinatorToken`）。
+> RTC Agent 的部署形态由运行时参数决定：不传 `sfuUrl` / `rendererToken` / `agentIdentity` 时走平台 RTC；三者全部传入时走 BYO RTC；只传其中一部分视为非法请求。BYO RTC 模式下 `sessionId` 同样可选：不传创建新会话，传入则复用已有会话（重连时开发者需重新签发 `rendererToken`）。
 
 ### 请求参数
 
@@ -211,10 +208,9 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
 | `mode` | String | ❌ | 本次会话接入模式。不传使用 Avatar 默认模式；可选 `managed` / `websocketAgent` / `rtcAgent` |
 | `voiceId` | String | ❌ | 覆盖此 session 的数字人默认语音 |
 | `sessionId` | String | ❌ | 传入则复用已有 session（重连），不传则创建新 session |
-| `sfuUrl` | String | ✅ BYO RTC | 开发者 LiveKit SFU 地址；与 `agentIdentity` / `coordinatorToken` / `rendererToken` 必须同时传入 |
+| `sfuUrl` | String | ✅ BYO RTC | 开发者 LiveKit SFU 地址；与 `agentIdentity` / `rendererToken` 必须同时传入 |
 | `agentIdentity` | String | ✅ BYO RTC | 开发者 agent 在 LiveKit 房间内使用的 identity；平台 renderer 会订阅该 identity 发布的 Audio Track |
-| `coordinatorToken` | String | ✅ BYO RTC | coordinator 加入房间的 Token；与 `sfuUrl` / `agentIdentity` / `rendererToken` 必须同时传入 |
-| `rendererToken` | String | ✅ BYO RTC | renderer 加入房间的 Token；与 `sfuUrl` / `agentIdentity` / `coordinatorToken` 必须同时传入 |
+| `rendererToken` | String | ✅ BYO RTC | renderer 加入房间的 Token；与 `sfuUrl` / `agentIdentity` 必须同时传入 |
 
 成功响应（200 OK）：
 
@@ -249,7 +245,7 @@ curl -X POST "https://facemarket.ai/vih/dispatcher/v1/session/start" \
 1. 后端服务调用 `POST /v1/session/start`。
    - **新会话**：传 `avatarId`，可选传 `mode`
    - **重连**：传 `avatarId` + `sessionId`，可选传 `mode`
-   - **BYO RTC**：传 `mode=rtcAgent` + `sfuUrl` + `agentIdentity` + `rendererToken` + `coordinatorToken`
+   - **BYO RTC**：传 `mode=rtcAgent` + `sfuUrl` + `agentIdentity` + `rendererToken`
 2. 平台服务验证资源权限，并初始化流媒体渲染管道。重连时复用已有 session 和 room。
 3. 后端接收响应，**必须**存储 `sessionId` 用于追踪和后续重连，并将 `userToken` + `sfuUrl` 下发至前端。重连时旧凭证被新凭证替换。
 
@@ -333,7 +329,6 @@ sequenceDiagram
     Backend->>Platform: POST /session/start {avatarId, mode: "websocketAgent"}（API Key 鉴权）
     Platform->>Renderer: 启动渲染实例（携带 rendererToken）
     Renderer->>SFU: 加入房间 (identity: renderer_{sessionId})
-    Platform->>SFU: 加入房间 (identity: coordinator_{sessionId})
     Platform-->>Backend: {sessionId, agentWsUrl, userToken, sfuUrl}
     Note right of Backend: agentWsUrl 内嵌一次性 agentToken<br/>绑定当前 sessionId，不可转发给前端
 
@@ -461,9 +456,7 @@ RTC Agent 不接收平台侧文本输入。开发者如需文本入口，应在�
 
 ## 6.1 RTC Agent - 平台 RTC（平台持有 LiveKit）
 
-平台持有 LiveKit SFU，房间内存在四类逻辑 Participant：终端用户、平台 coordinator、平台 renderer、开发者 agent。开发者实现 agent 后，以 `agent_{sessionId}` 身份加入房间。**平台自动订阅该 identity 下的 Audio Track 来驱动数字人口型**，开发者无需额外配置。
-
-> coordinator 与 renderer 当前按逻辑角色拆分；工程实现上未来可以合并为同一个进程或 Participant，但协议语义仍保持两个角色边界。
+平台持有 LiveKit SFU，房间内存在三类逻辑 Participant：终端用户、平台 renderer、开发者 agent。开发者实现 agent 后，以 `agent_{sessionId}` 身份加入房间。**平台自动订阅该 identity 下的 Audio Track 来驱动数字人口型**，开发者无需额外配置。
 
 ```mermaid
 sequenceDiagram
@@ -473,14 +466,11 @@ sequenceDiagram
     participant Agent as 开发者 agent
     participant Platform as 数字人平台
     participant LiveKit as 平台 LiveKit (SFU)
-    participant Coordinator as 平台会话协调者 (coordinator)
     participant Renderer as 平台渲染引擎 (renderer)
 
     Backend->>Platform: POST /session/start {avatarId, mode: "rtcAgent"}（API Key 鉴权）
     Platform->>Renderer: 启动渲染实例（携带 rendererToken）
     Renderer->>LiveKit: 加入房间 (identity: renderer_{sessionId})
-    Platform->>Coordinator: 启动会话协调者（携带 coordinatorToken）
-    Coordinator->>LiveKit: 加入房间 (identity: coordinator_{sessionId})
     Platform-->>Backend: {sessionId, userToken, agentToken, sfuUrl}
 
     par 终端用户加入
@@ -510,7 +500,6 @@ sequenceDiagram
 | 角色 | Identity 格式 | LiveKit 权限 |
 | --- | --- | --- |
 | 终端用户 | `user` | 订阅 Video/Audio；发布 Audio |
-| coordinator | `coordinator_{sessionId}` | 订阅 Audio/Data；发布 Data |
 | agent | `agent_{sessionId}` | 订阅 Audio；发布 Audio、Data |
 | renderer | `renderer_{sessionId}` | 订阅 Audio/Data；发布 Video/Audio（平台内部管理） |
 
@@ -528,7 +517,7 @@ sequenceDiagram
 
 ## 6.2 RTC Agent - BYO RTC（开发者自备 LiveKit）
 
-平台定位从"全托管服务商"变为**"数字人渲染插件"**。媒体流完全在开发者的 SFU 内部流转，平台 coordinator 与 renderer 以访客 Participant 身份加入开发者的 LiveKit 房间。Token 签发权完全归属开发者。
+平台定位从"全托管服务商"变为**"数字人渲染插件"**。媒体流完全在开发者的 SFU 内部流转，平台 renderer 以访客 Participant 身份加入开发者的 LiveKit 房间。Token 签发权完全归属开发者。
 
 ```mermaid
 sequenceDiagram
@@ -538,17 +527,14 @@ sequenceDiagram
     participant Agent as 开发者 agent
     participant Platform as 数字人平台 (API)
     participant DevLiveKit as 开发者自备 LiveKit
-    participant Coordinator as 平台会话协调者 (coordinator)
     participant Renderer as 平台渲染引擎 (renderer)
 
-    Backend->>Backend: 创建 LiveKit 房间，签发四类 Token
-    Note right of Backend: userToken（Sub Video/Audio, Pub Audio）<br/>agentToken（Sub Audio, Pub Audio/Data, identity=agentIdentity）<br/>rendererToken（Sub Audio/Data, Pub Video/Audio）<br/>coordinatorToken（Sub Audio/Data, canPublish: false）
+    Backend->>Backend: 创建 LiveKit 房间，签发三类 Token
+    Note right of Backend: userToken（Sub Video/Audio, Pub Audio）<br/>agentToken（Sub Audio, Pub Audio/Data, identity=agentIdentity）<br/>rendererToken（Sub Audio/Data, Pub Video/Audio）
 
-    Backend->>Platform: POST /session/start {avatarId, mode: "rtcAgent", sfuUrl, agentIdentity, rendererToken, coordinatorToken}
+    Backend->>Platform: POST /session/start {avatarId, mode: "rtcAgent", sfuUrl, agentIdentity, rendererToken}
     Platform->>Renderer: 调度渲染实例
     Renderer->>DevLiveKit: 加入房间（identity: rendererToken 内嵌 identity）
-    Platform->>Coordinator: 启动会话协调者（携带 sfuUrl + coordinatorToken）
-    Coordinator->>DevLiveKit: 加入房间（identity: coordinatorToken 内嵌 identity）
     Platform-->>Backend: {sessionId}
 
     par 终端用户加入
@@ -576,13 +562,12 @@ sequenceDiagram
 | 终端用户 | `user` | 开发者后端 | 内网即可 |
 | agent | `agentIdentity` | 开发者后端 | 内网即可 |
 | renderer | `rendererToken` 内嵌 identity | 开发者后端 | 开发者 LiveKit 需公网可达 |
-| coordinator | `coordinatorToken` 内嵌 identity | 开发者后端 | 开发者 LiveKit 需公网可达 |
 
-> **安全提示**：`rendererToken` 应设为最小权限（仅 Sub Audio/Data + Pub Video/Audio），`coordinatorToken` 应设为 `canPublish: false, canPublishData: true`。有效期均不超过 1 小时，通过 `/session/start` 一次性传递，**平台不保存**。
+> **安全提示**：`rendererToken` 应设为最小权限（仅 Sub Audio/Data + Pub Video/Audio）。有效期不超过 1 小时，通过 `/session/start` 一次性传递，**平台不保存**。
 >
 > **agentIdentity 约束**：BYO RTC 下 agent 的 identity 由开发者签发 Token 时决定，平台无法推导，必须通过 `/session/start` 显式传入。平台 renderer 会订阅该 identity 发布的 Audio Track 来驱动口型。
 >
-> **约束**：BYO RTC 的 renderer / coordinator identity 由开发者签发的 Token 决定；如需在同一 Room 内承载多个虚拟人实例，必须保证 `rendererToken` / `coordinatorToken` / `agentIdentity` 彼此隔离。平台标准多人会议能力优先使用 RTC Agent - 平台 RTC。
+> **约束**：BYO RTC 的 renderer identity 由开发者签发的 Token 决定；如需在同一 Room 内承载多个虚拟人实例，必须保证 `rendererToken` / `agentIdentity` 彼此隔离。平台标准多人会议能力优先使用 RTC Agent - 平台 RTC。
 
 **适用场景**：企业私有化部署、已有完整 RTC 基础设施、极致低延迟要求。
 
