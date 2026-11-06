@@ -9,6 +9,9 @@
 - English: [Live Avatar Integration Guide](./Live%20Avatar%20Integration%20Guide.md)
 - 中文: [Live Avatar Integration Guide (中文版)](./Live%20Avatar%20Integration%20Guide.zh-CN.md)
 
+- [WebSocket Agent 协议](./PROTOCOL.zh.md)
+- [Platform RTC 协议](./RTC-PROTOCOL.zh.md)
+
 ## 内容概览
 
 | 章节 | 说明 |

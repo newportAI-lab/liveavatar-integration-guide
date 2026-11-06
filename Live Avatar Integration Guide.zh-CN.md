@@ -374,7 +374,7 @@ sequenceDiagram
 
 ## 5.1 WebSocket 协议速查
 
-> 完整协议定义见 [PROTOCOL](PROTOCOL.md)，本节列出核心事件。
+> 完整协议定义见 [PROTOCOL](PROTOCOL.zh.md)，本节列出核心事件。
 
 所有文本消息使用三段式事件命名：`<domain>.<action>[.<stage>]`
 
@@ -422,7 +422,7 @@ Binary Frame 同时用于两条路径，格式完全相同，仅方向相反：
 
 音频格式固定约定：声道数 `1`（mono）；PCM 路径 sample depth 固定 `2 bytes`；ASR 入方向默认 16kHz，TTS 出方向默认 24kHz，可通过 `asrSampleRate` / `ttsSampleRate` 覆盖。
 
-完整 Header 字段定义见 [PROTOCOL](PROTOCOL.md)。
+完整 Header 字段定义见 [PROTOCOL](PROTOCOL.zh.md)。
 
 ### Java SDK
 

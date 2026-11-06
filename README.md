@@ -9,6 +9,9 @@ Developer documentation for integrating [Facemarket Live Avatar](https://facemar
 - English: [Live Avatar Integration Guide](./Live%20Avatar%20Integration%20Guide.md)
 - 中文: [Live Avatar Integration Guide (中文版)](./Live%20Avatar%20Integration%20Guide.zh-CN.md)
 
+- [WebSocket Agent protocol](./PROTOCOL.md)
+- [Platform RTC protocol](./RTC-PROTOCOL.md)
+
 ## What's Inside
 
 | Chapter | Description |

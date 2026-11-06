@@ -322,7 +322,7 @@ sequenceDiagram
     autonumber
     participant Client as End User (JS SDK)
     participant Backend as Developer Backend
-    participant Platform as Facemarket Live Avatar Platform (WS Server)
+    participant Platform as Facemarket Platform (WS Server)
     participant Renderer as Platform Renderer (renderer)
     participant SFU as Platform SFU
 
@@ -467,7 +467,7 @@ sequenceDiagram
     participant Client as End User (JS SDK)
     participant Backend as Developer Backend
     participant Agent as Developer Agent
-    participant Platform as Facemarket Live Avatar Platform
+    participant Platform as Facemarket Platform
     participant LiveKit as Platform LiveKit (SFU)
     participant Renderer as Platform Renderer (renderer)
 
@@ -523,7 +523,7 @@ sequenceDiagram
     participant Client as End User (JS SDK)
     participant Backend as Developer Backend
     participant Agent as Developer Agent
-    participant Platform as Facemarket Live Avatar Platform (API)
+    participant Platform as Facemarket Platform (API)
     participant DevLiveKit as Developer LiveKit
     participant Renderer as Platform Renderer (renderer)
 

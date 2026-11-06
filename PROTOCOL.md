@@ -2,9 +2,9 @@
 
 **English** | [中文](./PROTOCOL.zh.md)
 
-This protocol defines the WebSocket communication between the Live Avatar platform and developer services (agent), covering text, audio, and image content.
+This protocol defines the WebSocket communication between the Facemarket platform and developer services (agent), covering text, audio, and image content.
 
-> This document applies to `mode: "websocketAgent"`. ASR is provided by the developer in WebSocket Agent mode. Platform TTS is optional depending on Avatar configuration, and `/session/start` may omit `mode` if WebSocket Agent is the Avatar default mode.
+> This document applies to `mode: "websocketAgent"`. ASR is provided by the developer; platform TTS is optional depending on Avatar configuration, and `/session/start` may omit `mode` if WebSocket Agent is the Avatar default mode.
 
 ## Design Goals
 
@@ -28,6 +28,7 @@ We use the term "event" to designate message types. To prevent confusion as the 
 | Domain | Meaning |
 | --- | --- |
 | session | Session lifecycle |
+| scene | Avatar scene events |
 | input | User input |
 | response | Model output |
 | control | Control signals |
@@ -49,6 +50,7 @@ Describes "what is being done"
 | asr | input.asr |
 | chunk | response.chunk |
 | done | response.done |
+| state | response.state |
 | interrupt | control.interrupt |
 | prompt | system.prompt |
 | idleTrigger | system.idleTrigger |
@@ -73,14 +75,14 @@ Used for "streaming / state"
 
 ## WebSocket Connection Model
 
-The Live Avatar platform provides the WebSocket server and dynamically allocates a WS endpoint (`agentWsUrl`) for each session. The developer backend connects to the platform as a WebSocket client. No public-facing server is required on the developer side.
+The Facemarket platform provides the WebSocket server and dynamically allocates a WS endpoint (`agentWsUrl`) for each session. The developer backend connects to the platform as a WebSocket client. No public-facing server is required on the developer side.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant User as User (Frontend SDK)
     participant AppServer as Developer Backend
-    participant Platform as Live Avatar Service
+    participant Platform as Facemarket platform
     participant RTC as RTC Room (SFU)
     participant Avatar as Avatar Engine
 
@@ -125,10 +127,10 @@ The following options are configured on the Avatar.
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `ttsProvider` | `developer` | `developer` means the developer returns `response.audio.*` and audio Binary Frames; `platform` means the developer may return text via `response.chunk` / `response.done`, and the platform TTS drives the Avatar. |
-| `asrSampleRate` | `16000` | Developer-configured target sample rate for ASR input. After receiving user audio from LiveKit, the platform resamples to this rate before sending WebSocket Binary Frames to the developer ASR / Omni pipeline. |
+| `asrSampleRate` | `16000` | Sample rate of user audio forwarded to developer ASR, in Hz. |
 | `ttsSampleRate` | `24000` | Sample rate expected for developer-returned TTS audio, in Hz. |
 
-Audio is always mono PCM/Opus at the protocol level. Channel count and sample depth are not user-configurable; PCM sample depth is 2 bytes. The frontend publishes audio to LiveKit; the platform subscribes to that audio, resamples according to `asrSampleRate`, and forwards a stable WebSocket audio stream to the developer.
+Audio is always mono PCM/Opus at the protocol level. Channel count and sample depth are not user-configurable; PCM sample depth is 2 bytes.
 
 `ttsProvider=platform` is valid only when the Avatar has platform TTS information configured, such as `ttsProviderId`, `voiceId`, or a fallback voice. If TTS is not explicitly configured, the platform treats TTS as developer-provided and requires the developer to return `response.audio.*`.
 
@@ -138,9 +140,9 @@ Audio is always mono PCM/Opus at the protocol level. Channel count and sample de
 
 ### 1️⃣ Establishing Connection
 
-#### Live Avatar Service → Developer Backend
+#### Facemarket platform → Developer Backend
 
-> The Live Avatar Service **always** sends `session.init` first after the WebSocket connection is established.
+> The Facemarket platform **always** sends `session.init` first after the WebSocket connection is established.
 
 ```json
 {
@@ -154,7 +156,7 @@ Audio is always mono PCM/Opus at the protocol level. Channel count and sample de
 
 ---
 
-#### Developer Backend → Live Avatar Service
+#### Developer Backend → Facemarket platform
 
 ```json
 {
@@ -164,9 +166,9 @@ Audio is always mono PCM/Opus at the protocol level. Channel count and sample de
 
 ---
 
-#### Live Avatar Service → Developer Backend (scene.ready forwarded)
+#### Facemarket platform → Developer Backend (scene.ready forwarded)
 
-After the user's frontend joins the LiveKit room and the avatar scene renders, the user sends `scene.ready` via Data Channel. The platform bridges this to the agent via WebSocket so the agent knows it can begin the conversation.
+After the user's frontend joins the LiveKit room and the avatar scene renders, the user sends `scene.ready` via Data Channel. The 平台 bridges this to the agent via WebSocket so the agent knows it can begin the conversation.
 
 ```json
 {
@@ -175,6 +177,56 @@ After the user's frontend joins the LiveKit room and the avatar scene renders, t
 ```
 
 > This is a one-way notification. The agent does not reply to it.
+
+#### Facemarket platform → Developer Backend (scene.resourceTransition)
+
+When the renderer finishes the current video and is about to switch to the next
+configured video resource, the platform forwards this notification to the
+agent over the existing agent WebSocket connection.
+
+```json
+{
+  "event": "scene.resourceTransition",
+  "sessionId": "sess_123",
+  "requestId": "renderer_req_1",
+  "timestamp": 1710000000000,
+  "data": {
+    "previousResourceId": "video_a",
+    "nextResourceId": "video_b",
+    "message": "switch from video_a to video_b"
+  }
+}
+```
+
+This is a one-way notification. The agent does not reply to it, and SDK callback
+return values do not acknowledge, cancel, or delay the renderer switch.
+
+The SDK dispatches the event to `AgentListener.on_resource_transition(data)`.
+
+| Field | Location | Required | Meaning |
+|---|---|---|---|
+| `previousResourceId` | `data` | Yes | Stable business ID of the video resource being switched away from. It is not a URL, file path, or display name. |
+| `nextResourceId` | `data` | Yes | Stable business ID of the video resource the renderer is about to switch to. It is not a URL, file path, or display name. |
+| `message` | `data` | No | Optional human-readable context supplied by the platform. Use it for logs or diagnostics only; do not branch business logic on it. |
+| `sessionId` | envelope | Yes | Session that delivered the event. It scopes the current WebSocket connection. |
+| `requestId` | envelope | No | Platform-generated request/correlation ID for tracing this notification. |
+| `timestamp` | envelope | No | Platform event time in epoch milliseconds when supplied. |
+
+There is no `streamId` in the typed SDK data. The active WebSocket session
+already scopes the stream. If either required resource ID is missing or blank,
+the SDK treats the payload as malformed and does not invoke
+`on_resource_transition`.
+
+#### Developer Backend → Facemarket platform (scene.switchVideo)
+
+Send this custom event to change the playing video. Use
+`AvatarAgent.send_custom_event(request_id, event, data)`. Field names are
+camelCase. Items in `onceVideos`, `loopVideos`, and `videoChoreographyGroups`
+may be a resource ID or a base-video alias. `mode` is `HARD` or `GRACEFUL`
+(default). Unknown values become `GRACEFUL`.
+
+The call returns after the event is written. Watch `scene.resourceTransition`.
+Field table and examples: [README.md](./README.md#switch-video).
 
 ---
 
@@ -191,7 +243,7 @@ Adheres to the standard WebSocket protocol (RFC 6455):
 
 ### 3️⃣ User Text Input
 
-The Live Avatar Service sends a text input message.
+The Facemarket platform sends a text input message.
 
 ```json
 {
@@ -211,7 +263,7 @@ Text output is available only when `ttsProvider=platform` and a platform TTS voi
 
 #### start (Optional)
 
-Sent by the Developer Service **before** the first `response.chunk`. Use this to configure the TTS engine managed by the Live Avatar Service (speed, volume, mood). Omit it to use default settings. If TTS is provided by the developer, this message is also unnecessary.
+Sent by the Developer Service **before** the first `response.chunk`. Use this to configure the TTS engine managed by the Facemarket platform (speed, volume, mood). Omit it to use default settings. If TTS is provided by the developer, this message is also unnecessary.
 
 ```json
 {
@@ -253,6 +305,24 @@ Sent by the Developer Service **before** the first `response.chunk`. Use this to
 
 ---
 
+#### Response lifecycle requirements
+
+- Inbound `requestId` values MUST be propagated unchanged and MUST NOT be
+  generated from wall-clock time.
+- All chunks in one complete response MUST use the same `requestId` and
+  `responseId`.
+- The final chunk MUST be followed by `response.done` with the same identifiers,
+  unless the response is explicitly cancelled.
+- A new response for the same request ID MUST NOT begin while that request
+  already has an active response; distinct request IDs may be processed
+  concurrently according to application policy.
+- `requestId` → `responseId` = 1:N means sequential complete responses for one
+  request, never one response ID per chunk.
+- `control.interrupt` is only for a real business-driven interruption; it does
+  not replace `response.done` or `response.cancel` for the interrupted stream.
+
+---
+
 #### chunk (Text)
 
 ```json
@@ -282,15 +352,48 @@ Sent by the Developer Service **before** the first `response.chunk`. Use this to
 
 ---
 
-requestId → responseId = 1:N
-
 `seq` increments sequentially within a single response.
-
-A single response may consist of replies from multiple agents.
 
 ---
 
-### 5️⃣ State Synchronization (Sent by the Live Avatar Service)
+#### state (Sent by the Facemarket platform)
+
+`response.state` reports the lifecycle of one specific response. It is distinct
+from `session.state`, which describes the whole session.
+
+```json
+{
+  "event": "response.state",
+  "sessionId": "session-123",
+  "requestId": "req_1",
+  "responseId": "res_1",
+  "seq": 128,
+  "timestamp": 1788960000000,
+  "data": {
+    "state": "FINISHED",
+    "reason": "COMPLETED"
+  }
+}
+```
+
+States are `ACCEPTED`, `REJECTED`, and `FINISHED`. Current reasons are
+`COMPLETED`, `USER_COMMAND_INTERRUPT`, `DEVELOPER_COMMAND_INTERRUPT`, `FAILED`,
+`RENDERER_FAILED`, `STATE_TRANSITION_FAILED`, `INTERNAL_ERROR`, `SESSION_CLOSED`,
+`INVALID_REQUEST`, `SESSION_BUSY`, `RESPONSE_ID_CONFLICT`,
+`REQUEST_ID_CONFLICT`, `SEQUENCE_CONFLICT`, `SEQUENCE_GAP`, and
+`STREAM_ALREADY_DONE`. Receivers must tolerate future values. The first
+`REJECTED` or `FINISHED` is terminal and cannot be overwritten. Use
+`sessionId + seq` for online deduplication; sequence gaps are valid.
+
+`DEVELOPER_COMMAND_INTERRUPT` identifies a response interrupted by a developer command.
+
+Business progression requires the expected `responseId` plus
+`FINISHED/COMPLETED`. `session.state=IDLE`, any `done`, audio finish, track EOS,
+or local cancellation does not prove playback completion.
+
+---
+
+### 5️⃣ Session State Synchronization (Sent by the Facemarket platform)
 
 ```json
 {
@@ -323,22 +426,32 @@ A single response may consist of replies from multiple agents.
 ```json
 {
   "event": "control.interrupt",
-  "requestId": "req_2"
+  "requestId": "req_2",
+  "data": {
+    "interruptScope": "VOICE_AND_ACCOMPANIMENT"
+  }
 }
 ```
 
+`interruptScope` can be omitted.
+
+- Omit it, leave it empty, or send `VOICE_ONLY`: stop the voice only. External audio keeps playing.
+- `BGM_ONLY`: clear queued external audio only. The voice keeps playing.
+- `VOICE_AND_ACCOMPANIMENT`: stop the voice and clear queued external audio.
+
+Audio that belongs to the base video is never cleared. New external audio can still be sent after the interrupt.
+
+Send accompaniment with `send_external_audio(pcm)`, not `response.audio.*`. Omit `external_audio_config` at start to follow the voice format. A non-zero sample rate must be 16000, 24000, 44100, or 48000. During platform TTS, play a developer voice turn with `send_external_playback(request_id, response_id, frames)`. That sends `response.audio.start` and `response.audio.finish` with `data.purpose=external`, then the existing binary frames. The SDK does not resample.
+
 A signal for **explicit programmatic interruption**, initiated by the Developer Service in scenarios not triggered by any user input event (e.g., backend timeout, business-logic override).
 
-The Live Avatar Service automatically clears the RTC playback buffer whenever it receives a new user input event (`input.text` or `input.voice.start`). In those flows the developer only needs to cancel the internal LLM/TTS task — no explicit `control.interrupt` is required.
+The Facemarket platform automatically clears the RTC playback buffer whenever it receives a new user input event (`input.text` or `input.voice.start`). In those flows the developer only needs to cancel the internal LLM/TTS task — no explicit `control.interrupt` is required. If that cancellation abandons an active response, it must still send `response.cancel`: `ResponseStream` sends it when an exception exits its context, while a legacy integration must call `send_response_cancel` with the exact active `response_id`.
 
 Providing `requestId` helps ensure that a specific, designated conversation is interrupted precisely, preventing erroneous interruptions caused by network instability. This field is optional.
 
 The following sequence diagram illustrates the interrupt execution flow.
 
-> **Interrupt Ownership Rule:**
-> In WebSocket Agent mode, the developer owns ASR and speech-boundary detection. Only the developer service should issue explicit `control.interrupt` for programmatic interruption.
->
-> The platform automatically clears the RTC playback buffer when it receives a new user input boundary such as `input.text` or developer-sent `input.voice.start`; no explicit `control.interrupt` is needed for normal user barge-in.
+> **Interrupt ownership:** The developer owns ASR and speech-boundary detection and issues explicit `control.interrupt` for programmatic interruption. The platform clears the RTC playback buffer on `input.text` or developer-sent `input.voice.start`.
 
 ```mermaid
 sequenceDiagram
@@ -346,7 +459,7 @@ sequenceDiagram
     participant User as User (Frontend SDK)
     participant AppServer as Developer Backend (Handler)
     participant Task as Response Task (LLM/TTS)
-    participant Avatar as Live Avatar Service (Platform/RTC)
+    participant Avatar as Facemarket platform (Platform/RTC)
 
     Note over User, Avatar: Case 1: Avatar is speaking, user sends a text message
     User->>AppServer: 1. input.text (platform auto-clears RTC buffer before forwarding)
@@ -355,30 +468,32 @@ sequenceDiagram
         Note right of AppServer: [Text Interrupt — developer side only]
         AppServer->>Task: 2. cancelCurrentResponse() (terminate old task)
     end
+    Task->>Avatar: 3. response.cancel (terminate abandoned response)
 
-    AppServer->>Task: 3. processTextInput (start new task)
-    Task-->>Avatar: 4. Push new reply text/audio
-    Avatar-->>User: 5. Render new reply
+    AppServer->>Task: 4. processTextInput (start new task)
+    Task-->>Avatar: 5. Push new reply text/audio
+    Avatar-->>User: 6. Render new reply
 
-    Note over User, Avatar: Case 2: Avatar is speaking, user starts speaking (developer ASR / Omni path)
-    Avatar->>AppServer: 6. Binary Frames (audio resampled by platform according to asrSampleRate)
+    Note over User, Avatar: Case 2: Avatar is speaking, user starts speaking (asrProvider=developer / Omni path)
+    Avatar->>AppServer: 7. Binary Frames (continuous raw audio forwarded by platform)
 
-    AppServer->>AppServer: 7. asrService.detectVoiceActivity (speech boundary detected internally)
+    AppServer->>AppServer: 8. asrService.detectVoiceActivity (speech boundary detected internally)
 
     rect rgb(255, 240, 245)
         Note right of AppServer: [Voice Interrupt — developer side only]
-        AppServer->>Task: 8. cancelCurrentResponse() (cut off at the source)
+        AppServer->>Task: 9. cancelCurrentResponse() (cut off at the source)
     end
+    Task->>Avatar: 10. response.cancel (terminate abandoned response)
 
-    AppServer->>Avatar: 9. input.voice.start (speech boundary notification — platform auto-clears RTC buffer on receipt)
-    AppServer->>AppServer: 10. Continue ASR recognition (collecting input.asr.partial...)
-    AppServer->>Avatar: 11. input.voice.finish (user stopped speaking)
-    Note over User, Avatar: Repeat steps 3-5 for new reply flow
+    AppServer->>Avatar: 11. input.voice.start (speech boundary notification — platform auto-clears RTC buffer on receipt)
+    AppServer->>AppServer: 12. Continue ASR recognition (collecting input.asr.partial...)
+    AppServer->>Avatar: 13. input.voice.finish (user stopped speaking)
+    Note over User, Avatar: Repeat steps 4-6 for new reply flow
 ```
 
 ---
 
-### 7️⃣ Connection Imminently Closing (Sent by the Live Avatar Service)
+### 7️⃣ Connection Imminently Closing (Sent by the Facemarket platform)
 
 ```json
 {
@@ -390,6 +505,18 @@ sequenceDiagram
 ```
 
 This message is typically sent proactively by the system just before a timeout is declared.
+
+---
+
+### 8️⃣ Session Stop (Sent by Developer Service)
+
+```json
+{
+  "event": "session.stop"
+}
+```
+
+Requests the Facemarket platform to end the current session. The SDK sends it automatically from `AvatarAgent.stop()` before closing the WebSocket connection.
 
 ---
 
@@ -450,13 +577,13 @@ Binary Frames are forwarded using the same binary format defined in the [Audio P
 
 When `ttsProvider=developer`, the developer sends `response.audio.start`, pushes the corresponding audio Binary Frames, and sends `response.audio.finish` after transmission is complete.
 
-When `ttsProvider=platform`, the developer does not send `response.audio.*`; the platform TTS lifecycle is internal to the Live Avatar Service.
+When `ttsProvider=platform`, the developer does not send `response.audio.*`; the platform TTS lifecycle is internal to the Facemarket platform.
 
 ---
 
 ## Scenario 3: Server-Initiated Interaction (Idle Wake-up)
 
-### 1️⃣ Idle Event (Sent by the Live Avatar Service)
+### 1️⃣ Idle Event (Sent by the Facemarket platform)
 
 ```json
 {
@@ -483,7 +610,7 @@ The system detected that the Live Avatar has been idle for a significant period.
 
 ---
 
-Upon receiving this message, the Live Avatar Service will use the configured platform TTS engine to drive the Live Avatar to speak the specified content. This message is valid only when `ttsProvider=platform`.
+Upon receiving this message, the Facemarket platform will use the configured platform TTS engine to drive the Live Avatar to speak the specified content. This message is valid only when `ttsProvider=platform`.
 
 The prompt text does not count toward the accumulated user idle time.
 
@@ -520,6 +647,22 @@ Prompt audio does not count toward the accumulated user idle time.
   "data": {
     "code": "ASR_FAIL",
     "message": "audio decode error"
+  }
+}
+```
+
+---
+
+### Error (Sent by the Facemarket platform)
+
+The platform may also send an `error` event to the developer service to report platform-side failures. The SDK dispatches it to `AgentListener.on_error(code, message)`.
+
+```json
+{
+  "event": "error",
+  "data": {
+    "code": "PLATFORM_FAIL",
+    "message": "renderer crashed"
   }
 }
 ```
@@ -589,7 +732,23 @@ Maximum out-of-order window ≈ 200–500 ms
 
 This contains the actual raw audio binary data, specifically formatted as PCM or Opus binary data.
 
-Whether the audio data is sent from the Live Avatar Service to a developer, or from a developer to the Live Avatar Service, it must strictly adhere to this format.
+Whether the audio data is sent from the Facemarket platform to a developer, or from a developer to the Facemarket platform, it must strictly adhere to this format.
+
+---
+
+# Streaming System Prompts
+
+A streaming system prompt uses one stable identity:
+
+```json
+{"event":"system.prompt.start","requestId":"course-step-42","responseId":"prompt-uuid"}
+{"event":"system.prompt.chunk","requestId":"course-step-42","responseId":"prompt-uuid","seq":1,"timestamp":1788960000000,"data":{"text":"Next question."}}
+{"event":"system.prompt.done","requestId":"course-step-42","responseId":"prompt-uuid"}
+```
+
+Both IDs are required and non-empty. Chunk sequences start at 1 and increase for
+that response. `system.prompt.done` only closes text production. Completion is
+reported separately through `response.state` as described above.
 
 ---
 
