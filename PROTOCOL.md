@@ -219,14 +219,22 @@ the SDK treats the payload as malformed and does not invoke
 
 #### Developer Backend → Facemarket platform (scene.switchVideo)
 
-Send this custom event to change the playing video. Use
-`AvatarAgent.send_custom_event(request_id, event, data)`. Field names are
-camelCase. Items in `onceVideos`, `loopVideos`, and `videoChoreographyGroups`
-may be a resource ID or a base-video alias. `mode` is `HARD` or `GRACEFUL`
-(default). Unknown values become `GRACEFUL`.
+Send `scene.switchVideo` as a custom event to change the playing video.
 
-The call returns after the event is written. Watch `scene.resourceTransition`.
-Field table and examples: [README.md](./README.md#switch-video).
+```json
+{"event":"scene.switchVideo","requestId":"req_1","data":{"onceVideos":["res_intro"],"loopVideos":["res_idle"],"videoChoreographyGroups":[["A1","A2"],["B1"]],"mode":"GRACEFUL"}}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `onceVideos` | Videos played once in order. |
+| `loopVideos` | Videos played in a loop after `onceVideos`; ignored when `videoChoreographyGroups` is nonempty. |
+| `videoChoreographyGroups` | Groups cycled in order, choosing one video at random from each group. |
+| `mode` | `HARD` switches immediately; `GRACEFUL` waits for the current video to finish. The default and fallback for unknown values is `GRACEFUL`. |
+
+Video entries may be resource IDs or aliases. An alias is 3–32 characters, starts with a letter, contains only lowercase letters, digits, and underscores, and cannot end in an underscore. At least one of the three video fields must be nonempty; otherwise the platform skips the request. The platform resolves known aliases to resource IDs and treats unrecognized aliases as resource IDs. Supported video encoding is H.264. A subsequent request replaces the current playback configuration.
+
+Sending the event does not confirm the switch; observe `scene.resourceTransition`.
 
 ---
 

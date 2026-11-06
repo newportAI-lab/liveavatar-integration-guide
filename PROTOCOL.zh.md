@@ -213,14 +213,22 @@ SDK 类型数据中没有 `streamId`。当前 WebSocket 会话已经限定了 st
 
 #### Server（开发者服务）→ Client（数字人服务）— scene.switchVideo
 
-用自定义事件更换正在播放的视频。调用
-`AvatarAgent.send_custom_event(request_id, event, data)`。字段名必须是 camelCase。
-`onceVideos`、`loopVideos`、`videoChoreographyGroups` 的每一项可以是 resourceId
-或底板 alias。`mode` 为 `HARD` 或 `GRACEFUL`（默认）。无法识别时按
-`GRACEFUL`。
+发送自定义事件 `scene.switchVideo` 更换正在播放的视频。
 
-方法在消息写出后即返回。画面切换看 `scene.resourceTransition`。字段表和示例见
-[README.zh.md](./README.zh-CN.md#切视频)。
+```json
+{"event":"scene.switchVideo","requestId":"req_1","data":{"onceVideos":["res_intro"],"loopVideos":["res_idle"],"videoChoreographyGroups":[["A1","A2"],["B1"]],"mode":"GRACEFUL"}}
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `onceVideos` | 按顺序播放一次的视频列表。 |
+| `loopVideos` | `onceVideos` 播完后循环播放；`videoChoreographyGroups` 非空时忽略。 |
+| `videoChoreographyGroups` | 按组顺序循环，每组随机选择一个视频。 |
+| `mode` | `HARD` 立即切换；`GRACEFUL` 等当前视频播完。默认值及未知值的回退为 `GRACEFUL`。 |
+
+视频项可以是 resourceId 或 alias。alias 为 3–32 位，以字母开头，只包含小写字母、数字和下划线，不能以下划线结尾。三个视频字段至少一个非空，否则平台跳过请求。平台将已知 alias 转为 resourceId，未命中时原样作为 resourceId。支持 H.264 视频编码。后续请求会替换当前播放配置。
+
+发送事件不代表切换完成；可通过 `scene.resourceTransition` 观察。
 
 ---
 
